@@ -142,7 +142,7 @@ export const useRouterStore = defineStore('router', () => {
     let topActive = sessionStorage.getItem('topActive')
     // 初始化菜单内容，防止重复添加
     topMenu.value = [];
-    asyncRouters.value[0]?.children.forEach((item) => {
+    asyncRouters.value[0]?.children?.forEach((item) => {
       if (item.hidden) return
       menuMap[item.name] = item
       topMenu.value.push({ ...item, children: [] })
@@ -156,7 +156,7 @@ export const useRouterStore = defineStore('router', () => {
   const routeMap = {}
   // 从后台获取动态路由
   const SetAsyncRouter = async () => {
-    asyncRouterFlag.value++
+    
     const baseRouter = [
       {
         path: '/layout',
@@ -169,6 +169,17 @@ export const useRouterStore = defineStore('router', () => {
       }
     ]
     const asyncRouterRes = await asyncMenu()
+
+    if (asyncRouterRes?.code !== 0) {
+      console.error('获取动态菜单失败:', asyncRouterRes)
+      throw new Error(asyncRouterRes?.msg || '获取动态菜单失败')
+    }
+
+    if (!Array.isArray(asyncRouterRes?.data?.menus)) {
+      console.error('动态菜单数据格式异常:', asyncRouterRes)
+      throw new Error('动态菜单数据格式异常')
+    }
+
     const asyncRouter = asyncRouterRes.data.menus
     asyncRouter &&
       asyncRouter.push({
@@ -189,6 +200,7 @@ export const useRouterStore = defineStore('router', () => {
     asyncRouterHandle(baseRouter)
     KeepAliveFilter(asyncRouter)
     asyncRouters.value = baseRouter
+    asyncRouterFlag.value++
     return true
   }
 
