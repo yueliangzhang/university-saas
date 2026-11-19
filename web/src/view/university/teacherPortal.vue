@@ -39,25 +39,7 @@ onMounted(()=>{if(token.value)refresh()})
 </script>
 <style scoped>.teacher-portal{min-height:100vh;background:#f4f7fb;color:#1e293b}.topbar{background:#fff;padding:18px max(24px,calc((100vw - 1200px)/2));display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0}.brand{font-size:19px;font-weight:700;color:#1d4ed8}.login-wrap{max-width:430px;margin:90px auto;padding:0 16px}.login-wrap h2{margin:0 0 8px}.muted{color:#64748b;font-size:13px}.main{max-width:1200px;margin:0 auto;padding:28px 18px}.welcome,.section-header{display:flex;justify-content:space-between;align-items:center;gap:12px}.welcome h2{margin:0}.stats{margin:20px 0}.stats h2{margin:8px 0 0;font-size:30px}.section{margin-bottom:18px}.pager{margin-top:16px;display:flex;justify-content:flex-end}@media(max-width:600px){.welcome{align-items:flex-start;flex-direction:column}.main{padding:14px 10px}.topbar{padding:14px}}
 
-/* V17 Scroll Fix */
-html, body {
-  overflow-y: auto;
-}
-
-.uni-portal,
-.teacher-portal,
-.student-portal,
-.portal-layout,
-.portal-main,
-.portal-content {
-  height: auto;
-  min-height: 100vh;
-  overflow-y: visible;
-}
-
-.el-main {
-  overflow-y: auto;
-}
+/* Legacy scoped scroll rules replaced by portal-specific global rules below. */
 
 </style>
 
@@ -112,4 +94,28 @@ html, body {
  .teacher-portal.uni-ui .pager { justify-content:center; }
 }
 @media (prefers-reduced-motion:reduce) { .teacher-portal.uni-ui .stats :deep(.el-card) { transition:none; transform:none; } }
+</style>
+
+
+<style>
+/* V17.7.1 TEACHER PORTAL SCROLL FIX */
+/* Only while teacher portal is mounted. Restore document scrolling when outer app styles lock it. */
+html:has(.teacher-portal),
+body:has(.teacher-portal) {
+  height: auto !important;
+  min-height: 100% !important;
+  overflow-y: auto !important;
+}
+body:has(.teacher-portal) #app {
+  height: auto !important;
+  min-height: 100vh !important;
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+body:has(.teacher-portal) .teacher-portal {
+  height: auto !important;
+  min-height: 100vh;
+  max-height: none !important;
+  overflow: visible !important;
+}
 </style>
