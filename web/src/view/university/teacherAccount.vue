@@ -1,8 +1,23 @@
 <template>
+  <!-- UNI_ADMIN_V17_6_2 -->
+  <div class="uni-admin-v1762-page">
+    <header class="uni-admin-v1762-heading">
+      <div class="uni-admin-v1762-heading-copy">
+        <span class="uni-admin-v1762-eyebrow">UNIVERSITY MANAGEMENT</span>
+        <h1>教师账号与辅导员</h1>
+        <p>教师账号及班级辅导员分配</p>
+      </div>
+      <span class="uni-admin-v1762-heading-mark" aria-hidden="true">校务管理</span>
+    </header>
+    <div class="uni-admin-v1762-content">
+
  <div class="teacher-account"><el-card shadow="never"><template #header><b>教师账号与辅导员分配</b></template><el-alert title="教师使用独立账号登录；每个班级目前只允许指定一名负责审批的辅导员。" type="info" :closable="false" style="margin-bottom:16px"/>
  <h3>教师账号</h3><el-table v-loading="loading" :data="teachers" style="width:100%"><el-table-column prop="teacherNo" label="工号"/><el-table-column prop="name" label="姓名"/><el-table-column label="账号状态"><template #default="{row}"><el-tag v-if="account(row.id)" :type="account(row.id).status===1?'success':'info'">{{account(row.id).status===1?'正常':'停用'}}</el-tag><el-tag v-else type="warning">未开通</el-tag></template></el-table-column><el-table-column label="操作" min-width="250"><template #default="{row}"><el-button v-if="!account(row.id)" type="primary" link @click="passwordDialog(row,false)">开通账号</el-button><template v-else><el-button type="primary" link @click="passwordDialog(row,true)">重置密码</el-button><el-button type="warning" link @click="toggle(row)">{{account(row.id).status===1?'停用':'启用'}}</el-button></template></template></el-table-column></el-table>
  <el-divider/><h3>班级辅导员</h3><el-table :data="classes" style="width:100%"><el-table-column prop="name" label="班级"/><el-table-column prop="code" label="班级代码"/><el-table-column label="负责教师" min-width="250"><template #default="{row}"><el-select :model-value="advisor(row.id)" clearable placeholder="未分配" style="width:230px" @change="v=>setAdvisor(row.id,v)"><el-option v-for="t in teachers.filter(x=>x.status===1)" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id"/></el-select></template></el-table-column></el-table>
  </el-card><el-dialog v-model="dialog" :title="reset?'重置教师密码':'开通教师账号'" width="min(450px,95vw)"><p>{{selected?.name}}（{{selected?.teacherNo}}）</p><el-input v-model="password" type="password" show-password placeholder="设置至少12位的初始密码"/><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="savePassword">确认</el-button></template></el-dialog></div>
+
+    </div>
+  </div>
 </template>
 <script setup>
 import {ref,onMounted} from 'vue'

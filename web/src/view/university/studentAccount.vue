@@ -1,4 +1,16 @@
 <template>
+  <!-- UNI_ADMIN_V17_6_2 -->
+  <div class="uni-admin-v1762-page">
+    <header class="uni-admin-v1762-heading">
+      <div class="uni-admin-v1762-heading-copy">
+        <span class="uni-admin-v1762-eyebrow">UNIVERSITY MANAGEMENT</span>
+        <h1>学生账号管理</h1>
+        <p>学生门户账号与安全设置</p>
+      </div>
+      <span class="uni-admin-v1762-heading-mark" aria-hidden="true">校务管理</span>
+    </header>
+    <div class="uni-admin-v1762-content">
+
   <div class="p-4">
     <el-card>
       <template #header><b>学生账号管理</b></template>
@@ -20,6 +32,9 @@
       <el-input v-model="password" type="password" show-password placeholder="设置至少12位的初始密码" autocomplete="new-password"/>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">确认</el-button></template>
     </el-dialog>
+  </div>
+
+    </div>
   </div>
 </template>
 <script setup>

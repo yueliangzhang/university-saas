@@ -1,4 +1,16 @@
 <template>
+  <!-- UNI_ADMIN_V17_6_2 -->
+  <div class="uni-admin-v1762-page">
+    <header class="uni-admin-v1762-heading">
+      <div class="uni-admin-v1762-heading-copy">
+        <span class="uni-admin-v1762-eyebrow">UNIVERSITY MANAGEMENT</span>
+        <h1>高校工作台</h1>
+        <p>校园业务总览与常用管理入口</p>
+      </div>
+      <span class="uni-admin-v1762-heading-mark" aria-hidden="true">校务管理</span>
+    </header>
+    <div class="uni-admin-v1762-content">
+
   <div class="p-6">
     <el-card>
       <template #header>高校工作台</template>
@@ -10,6 +22,9 @@
         </el-descriptions>
       </div>
     </el-card>
+  </div>
+
+    </div>
   </div>
 </template>
 

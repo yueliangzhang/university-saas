@@ -1,4 +1,16 @@
 <template>
+  <!-- UNI_ADMIN_V17_6_2 -->
+  <div class="uni-admin-v1762-page">
+    <header class="uni-admin-v1762-heading">
+      <div class="uni-admin-v1762-heading-copy">
+        <span class="uni-admin-v1762-eyebrow">UNIVERSITY MANAGEMENT</span>
+        <h1>教师管理</h1>
+        <p>教师档案、学院归属与在职状态</p>
+      </div>
+      <span class="uni-admin-v1762-heading-mark" aria-hidden="true">校务管理</span>
+    </header>
+    <div class="uni-admin-v1762-content">
+
   <div class="teacher-page">
     <el-card shadow="never" class="hero">
       <div class="hero-inner"><div><h2>教师管理</h2><p>维护本校教师档案、学院归属与在职状态</p></div><el-button type="primary" @click="openCreate">新增教师</el-button></div>
@@ -34,6 +46,9 @@
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
+  </div>
+
+    </div>
   </div>
 </template>
 <script setup>

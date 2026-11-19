@@ -1,4 +1,16 @@
 <template>
+  <!-- UNI_ADMIN_V17_6_2 -->
+  <div class="uni-admin-v1762-page">
+    <header class="uni-admin-v1762-heading">
+      <div class="uni-admin-v1762-heading-copy">
+        <span class="uni-admin-v1762-eyebrow">UNIVERSITY MANAGEMENT</span>
+        <h1>高校租户管理</h1>
+        <p>高校租户信息与运营管理</p>
+      </div>
+      <span class="uni-admin-v1762-heading-mark" aria-hidden="true">校务管理</span>
+    </header>
+    <div class="uni-admin-v1762-content">
+
   <div class="p-4">
     <el-card shadow="never">
       <div class="mb-4 flex items-center justify-between">
@@ -123,6 +135,9 @@
         </el-button>
       </template>
     </el-dialog>
+  </div>
+
+    </div>
   </div>
 </template>
 

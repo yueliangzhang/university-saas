@@ -53,6 +53,7 @@
 </template>
 
 <script setup>
+  import '@/styles/university-admin-v17-6-2.css'
   import GvaAside from '@/view/layout/aside/index.vue'
   import GvaHeader from '@/view/layout/header/index.vue'
   import useResponsive from '@/hooks/responsive'
