@@ -1,37 +1,76 @@
 <template>
-  <!-- UNI_ADMIN_V17_6_2 -->
-  <div class="uni-admin-v1762-page">
-    <header class="uni-admin-v1762-heading">
-      <div class="uni-admin-v1762-heading-copy">
-        <span class="uni-admin-v1762-eyebrow">UNIVERSITY MANAGEMENT</span>
+  <!-- UNI_STUDENT_V17_6_9 -->
+  <main class="uni-student-page">
+    <div class="uni-student-heading">
+      <div>
         <h1>学生管理</h1>
-        <p>学生档案、学籍信息与状态管理</p>
+        <p>统一管理学生档案、请假审批与登录账号</p>
       </div>
-      <span class="uni-admin-v1762-heading-mark" aria-hidden="true">校务管理</span>
-    </header>
-    <div class="uni-admin-v1762-content">
+      <el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button>
+    </div>
 
-  <div class="p-6">
-    <el-card>
-      <template #header>学生管理</template>
-      <el-form inline>
-        <el-form-item label="姓名/学号"><el-input v-model="keyword" clearable placeholder="搜索姓名或学号" @keyup.enter="search" /></el-form-item>
-        <el-form-item label="班级"><el-select v-model="filterClass" clearable placeholder="全部班级" style="width:180px"><el-option v-for="x in classes" :key="x.id" :label="x.name" :value="x.id" /></el-select></el-form-item>
-        <el-form-item><el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button><el-button type="success" @click="openCreate">新增学生</el-button></el-form-item>
+    <nav class="uni-student-tabs" aria-label="学生管理功能">
+      <button type="button" :class="{ active: activeTab === 'profile' }" @click="activeTab = 'profile'">学生档案</button>
+      <button type="button" :class="{ active: activeTab === 'leave' }" @click="activeTab = 'leave'">请假审批</button>
+      <button type="button" :class="{ active: activeTab === 'account' }" @click="activeTab = 'account'">登录账号</button>
+    </nav>
+    <section v-show="activeTab === 'profile'" class="uni-student-panel">
+      <div class="uni-student-panel-title">
+        <div class="uni-student-panel-name">学生档案 <span class="uni-student-count">共 {{ total }} 人</span></div>
+      </div>
+      <el-form class="uni-student-filter" inline @submit.prevent="search">
+        <el-form-item label="姓名 / 学号">
+          <el-input v-model="keyword" clearable placeholder="搜索姓名或学号" style="width:220px" @keyup.enter="search" />
+        </el-form-item>
+        <el-form-item label="所属班级">
+          <el-select v-model="filterClass" clearable filterable placeholder="全部班级" style="width:200px" @change="search">
+            <el-option v-for="x in classes" :key="x.id" :label="x.name" :value="x.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="uni-student-filter-actions">
+          <el-button type="primary" @click="search">查询</el-button>
+          <el-button @click="reset">重置</el-button>
+        </el-form-item>
       </el-form>
-      <el-table v-loading="loading" :data="rows" border>
-        <el-table-column prop="studentNo" label="学号" min-width="135" />
-        <el-table-column prop="name" label="姓名" min-width="110" />
-        <el-table-column label="性别" width="80"><template #default="{row}">{{ ['未填写','男','女'][row.gender] || '未知' }}</template></el-table-column>
-        <el-table-column label="班级" min-width="150"><template #default="{row}">{{ className(row.classId) }}</template></el-table-column>
-        <el-table-column prop="enrollmentYear" label="入学年份" width="110" />
-        <el-table-column prop="phone" label="电话" min-width="120" />
-        <el-table-column label="状态" width="85"><template #default="{row}">{{ row.status===1?'在读':'停用' }}</template></el-table-column>
-        <el-table-column label="操作" width="150"><template #default="{row}"><el-button link type="primary" @click="openEdit(row)">编辑</el-button><el-button link type="danger" @click="remove(row)">删除</el-button></template></el-table-column>
-      </el-table>
-      <div class="mt-4 flex justify-end"><el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="search" /></div>
-    </el-card>
-    <el-dialog v-model="dialog" :title="editing?'编辑学生':'新增学生'" width="560px">
+
+      <div class="uni-student-table-scroll">
+        <el-table v-loading="loading" :data="rows" stripe style="width:100%" empty-text="暂无符合条件的学生">
+          <el-table-column prop="studentNo" label="学号" min-width="130">
+            <template #default="{row}"><span class="uni-student-number">{{ row.studentNo }}</span></template>
+          </el-table-column>
+          <el-table-column prop="name" label="姓名" min-width="150">
+            <template #default="{row}"><span class="uni-student-name">{{ row.name }}</span></template>
+          </el-table-column>
+          <el-table-column label="性别" width="85">
+            <template #default="{row}">{{ ['未填写','男','女'][row.gender] || '未知' }}</template>
+          </el-table-column>
+          <el-table-column label="所属班级" min-width="180" show-overflow-tooltip>
+            <template #default="{row}">{{ className(row.classId) }}</template>
+          </el-table-column>
+          <el-table-column prop="enrollmentYear" label="入学年份" width="110" />
+          <el-table-column prop="phone" label="联系电话" min-width="140" show-overflow-tooltip>
+            <template #default="{row}">{{ row.phone || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="学籍状态" width="110">
+            <template #default="{row}"><el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light" size="small">{{ row.status === 1 ? '在读' : '停用' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" width="142" fixed="right" align="right">
+            <template #default="{row}">
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="remove(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div class="uni-student-pagination">
+        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="search" />
+      </div>
+    </section>
+
+    <section v-if="activeTab === 'leave'" class="uni-student-panel uni-student-subpanel"><StudentLeavePanel /></section>
+    <section v-if="activeTab === 'account'" class="uni-student-panel uni-student-subpanel"><StudentAccountPanel /></section>
+
+    <el-dialog v-model="dialog" :title="editing ? '编辑学生' : '新增学生'" width="560px" append-to-body class="uni-student-dialog">
       <el-form :model="form" label-width="95px">
         <el-form-item label="学号" required><el-input v-model="form.studentNo" maxlength="64" /></el-form-item>
         <el-form-item label="姓名" required><el-input v-model="form.name" maxlength="191" /></el-form-item>
@@ -44,15 +83,15 @@
       </el-form>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
-  </div>
-
-    </div>
-  </div>
+  </main>
 </template>
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import StudentLeavePanel from './studentLeavePanel.vue'
+import StudentAccountPanel from './studentAccountPanel.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
+const activeTab=ref('profile')
 const rows=ref([]),classes=ref([]),majors=ref([]),colleges=ref([])
 const keyword=ref(''),filterClass=ref(null),page=ref(1),pageSize=ref(20),total=ref(0)
 const loading=ref(false),saving=ref(false),dialog=ref(false),editing=ref(false),form=ref({})
@@ -69,53 +108,49 @@ const save=async()=>{if(!form.value.studentNo?.trim()||!form.value.name?.trim()|
 const remove=async row=>{try{await ElMessageBox.confirm(`确定删除学生「${row.name}」？`,'删除确认',{type:'warning'});const r=await api('delete',undefined,{id:row.id});if(r?.code!==0)throw Error(r?.msg||'删除失败');ElMessage.success('删除成功');await load()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'删除失败')}}
 onMounted(async()=>{await loadOptions();await load()})
 </script>
-
 <style scoped>
+.uni-student-tabs { display:flex; align-items:center; gap:5px; border-bottom:1px solid #e7edf5; margin:0 0 16px; padding:0 2px; overflow-x:auto; }
+.uni-student-tabs button { appearance:none; cursor:pointer; white-space:nowrap; background:transparent; border:0; border-bottom:2px solid transparent; padding:12px 20px; font-size:14px; color:#65748b; font-weight:550; }
+.uni-student-tabs button:hover { color:#2563eb; }
+.uni-student-tabs button.active { color:#2563eb; border-bottom-color:#2563eb; font-weight:650; }
+.uni-student-subpanel { overflow:visible; }
+@media(max-width:768px) { .uni-student-tabs button { padding:11px 14px; } }
 
-/* UNIVERSITY_ADMIN_V17_4_BEGIN */
-/* Only applies to this Vue SFC; no global html/body or overflow changes. */
-:deep(.el-card) {
-  border: 1px solid #e7edf5;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(24, 49, 86, .045);
-  background: #fff;
-}
-:deep(.el-card__header) {
-  padding: 18px 22px;
-  border-bottom: 1px solid #edf1f7;
-  font-weight: 650;
-  color: #1d2b43;
-}
-:deep(.el-card__body) { padding: 22px; }
-:deep(.el-button) { border-radius: 9px; font-weight: 550; }
-:deep(.el-button--primary) { --el-button-bg-color: #2563eb; --el-button-border-color: #2563eb; --el-button-hover-bg-color: #1d4ed8; --el-button-hover-border-color: #1d4ed8; }
-:deep(.el-input__wrapper),
-:deep(.el-select__wrapper),
-:deep(.el-textarea__inner) {
-  border-radius: 9px;
-  box-shadow: 0 0 0 1px #e2e8f0 inset;
-}
-:deep(.el-input__wrapper.is-focus),
-:deep(.el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px #2563eb inset; }
-:deep(.el-table) {
-  --el-table-header-bg-color: #f8fafd;
-  --el-table-border-color: #edf1f7;
-  --el-table-row-hover-bg-color: #f5f8ff;
-  border-radius: 12px;
-  font-size: 13px;
-}
-:deep(.el-table th.el-table__cell) { color: #53647d; font-weight: 650; }
-:deep(.el-table td.el-table__cell) { color: #27374f; }
-:deep(.el-tag) { border-radius: 7px; font-weight: 550; }
-:deep(.el-pagination) { margin-top: 16px; }
-:deep(.el-dialog) { border-radius: 18px; max-width: calc(100vw - 28px); }
-:deep(.el-dialog__header) { padding-bottom: 16px; border-bottom: 1px solid #edf1f7; }
-:deep(.el-form-item__label) { color: #40516a; font-weight: 550; }
+.uni-student-page { padding: 18px 22px 28px; min-width: 0; color: #25344d; }
+.uni-student-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.uni-student-heading h1 { margin:0; font-size:22px; line-height:1.4; font-weight:650; color:#1d2b43; }
+.uni-student-heading p { margin:5px 0 0; color:#7a879a; font-size:13px; }
+.uni-student-panel { border:1px solid #e6ebf3; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 3px 14px rgba(27,47,84,.025); }
+.uni-student-panel-title { padding:17px 20px; border-bottom:1px solid #edf0f5; }
+.uni-student-panel-name { font-size:15px; font-weight:650; }
+.uni-student-count { margin-left:10px; font-size:12px; font-weight:400; color:#8190a4; }
+.uni-student-filter { display:flex; align-items:center; flex-wrap:wrap; gap:0 14px; padding:18px 20px 2px; }
+.uni-student-filter :deep(.el-form-item) { margin-right:0; margin-bottom:16px; }
+.uni-student-filter :deep(.el-form-item__label) { color:#56657b; font-weight:500; }
+.uni-student-filter :deep(.el-input__wrapper), .uni-student-filter :deep(.el-select__wrapper) { border-radius:7px; }
+.uni-student-filter-actions { margin-left:auto; }
+.uni-student-page :deep(.el-button) { border-radius:7px; }
+.uni-student-page :deep(.el-button--primary) { --el-button-bg-color:#2563eb; --el-button-border-color:#2563eb; --el-button-hover-bg-color:#1d4ed8; --el-button-hover-border-color:#1d4ed8; }
+.uni-student-table-scroll { padding:0 20px; min-width:0; }
+.uni-student-page :deep(.el-table) { --el-table-header-bg-color:#f7f9fc; --el-table-border-color:#edf1f6; --el-table-row-hover-bg-color:#f7faff; font-size:13px; }
+.uni-student-page :deep(.el-table th.el-table__cell) { color:#617087; font-weight:600; height:46px; }
+.uni-student-page :deep(.el-table td.el-table__cell) { height:48px; color:#334155; }
+.uni-student-name { font-weight:600; color:#25344d; }
+.uni-student-number { font-variant-numeric:tabular-nums; color:#475569; }
+.uni-student-page :deep(.el-tag) { border-radius:5px; }
+.uni-student-pagination { display:flex; justify-content:flex-end; padding:17px 20px 20px; }
 @media (max-width: 768px) {
-  :deep(.el-card__body) { padding: 14px; }
-  :deep(.el-card__header) { padding: 14px; }
-  :deep(.el-dialog) { width: calc(100vw - 24px) !important; margin: 5vh auto; }
-  :deep(.el-pagination) { flex-wrap: wrap; justify-content: center; row-gap: 8px; }
+  .uni-student-page { padding:12px; }
+  .uni-student-heading { align-items:flex-start; }
+  .uni-student-heading h1 { font-size:19px; }
+  .uni-student-panel-title { padding:14px; }
+  .uni-student-filter { padding:14px 14px 0; display:block; }
+  .uni-student-filter :deep(.el-form-item) { display:flex; margin-bottom:12px; }
+  .uni-student-filter :deep(.el-form-item__content) { flex:1; min-width:0; }
+  .uni-student-filter :deep(.el-input), .uni-student-filter :deep(.el-select) { width:100% !important; }
+  .uni-student-filter-actions { margin-left:0; }
+  .uni-student-table-scroll { padding:0 10px; }
+  .uni-student-pagination { padding:14px 10px; overflow-x:auto; justify-content:flex-start; }
+  .uni-student-pagination :deep(.el-pagination) { flex-wrap:nowrap; }
 }
-/* UNIVERSITY_ADMIN_V17_4_END */
 </style>

@@ -1,0 +1,42 @@
+<template>
+  <div class="uni-teacher-panel">
+    <div v-if="mode === 'accounts'" class="uni-panel-section">
+      <div class="uni-panel-heading"><div><h3>教师登录账号</h3><p>开通账号、重置密码及启停管理</p></div><el-button @click="load">刷新</el-button></div>
+      <el-table v-loading="loading" :data="teachers" style="width:100%" empty-text="暂无教师">
+        <el-table-column prop="teacherNo" label="工号" min-width="120" />
+        <el-table-column prop="name" label="姓名" min-width="140" />
+        <el-table-column label="账号状态" min-width="130"><template #default="{row}"><el-tag v-if="account(row.id)" :type="account(row.id).status===1?'success':'info'">{{account(row.id).status===1?'正常':'停用'}}</el-tag><el-tag v-else type="warning">未开通</el-tag></template></el-table-column>
+        <el-table-column label="操作" min-width="230"><template #default="{row}"><el-button v-if="!account(row.id)" type="primary" link @click="passwordDialog(row,false)">开通账号</el-button><template v-else><el-button type="primary" link @click="passwordDialog(row,true)">重置密码</el-button><el-button type="warning" link @click="toggle(row)">{{account(row.id).status===1?'停用':'启用'}}</el-button></template></template></el-table-column>
+      </el-table>
+    </div>
+    <div v-else class="uni-panel-section">
+      <div class="uni-panel-heading"><div><h3>班级辅导员分配</h3><p>每个班级最多指定一名负责审批的辅导员</p></div><el-button @click="load">刷新</el-button></div>
+      <el-table v-loading="loading" :data="classes" style="width:100%" empty-text="暂无班级">
+        <el-table-column prop="name" label="班级" min-width="160" />
+        <el-table-column prop="code" label="班级代码" min-width="130" />
+        <el-table-column label="负责教师" min-width="280"><template #default="{row}"><el-select :model-value="advisor(row.id)" clearable placeholder="未分配" style="width:min(260px,100%)" @change="v=>setAdvisor(row.id,v)"><el-option v-for="t in teachers.filter(x=>x.status===1)" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id" /></el-select></template></el-table-column>
+      </el-table>
+    </div>
+    <el-dialog v-model="dialog" :title="reset?'重置教师密码':'开通教师账号'" width="min(450px,95vw)" append-to-body><p>{{selected?.name}}（{{selected?.teacherNo}}）</p><el-input v-model="password" type="password" show-password placeholder="设置至少12位的初始密码"/><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="savePassword">确认</el-button></template></el-dialog>
+  </div>
+</template>
+<script setup>
+import {ref,onMounted,watch} from 'vue'
+import {ElMessage,ElMessageBox} from 'element-plus'
+import request from '@/utils/request'
+const teachers=ref([]),accounts=ref([]),classes=ref([]),advisors=ref([]),loading=ref(false),saving=ref(false),dialog=ref(false),selected=ref(null),reset=ref(false),password=ref('')
+const api=async(url,method='get',data,params)=>{const r=await request({url,method,data,params});if(r?.code!==0)throw Error(r?.msg||'操作失败');return r.data}
+const load=async()=>{loading.value=true;try{const [t,a,c,v]=await Promise.all([api('/uni/teachers','get',undefined,{page:1,pageSize:100}),api('/uni/teacher-accounts'),api('/uni/org/classes','get',undefined,{page:1,pageSize:100}),api('/uni/class-advisors')]);teachers.value=t?.list||[];accounts.value=a?.list||[];classes.value=c?.list||[];advisors.value=v?.list||[]}catch(e){ElMessage.error(e.message||'加载失败')}finally{loading.value=false}}
+const account=id=>accounts.value.find(a=>a.teacherId===id)
+const advisor=id=>advisors.value.find(a=>a.classId===id)?.teacherId||''
+const passwordDialog=(row,isReset)=>{selected.value=row;reset.value=isReset;password.value='';dialog.value=true}
+const savePassword=async()=>{if(password.value.length<12||new TextEncoder().encode(password.value).length>72){ElMessage.warning('密码至少12位，最多72字节');return}saving.value=true;try{await api(reset.value?'/uni/teacher-accounts/reset-password':'/uni/teacher-accounts','post',{teacherId:selected.value.id,password:password.value});ElMessage.success('操作成功');dialog.value=false;password.value='';await load()}catch(e){ElMessage.error(e.message||'操作失败')}finally{saving.value=false}}
+const toggle=async row=>{const a=account(row.id);try{await ElMessageBox.confirm(`确认${a.status===1?'停用':'启用'}该账号？`,'确认');await api('/uni/teacher-accounts/status','put',{teacherId:row.id,status:a.status===1?2:1});ElMessage.success('已更新');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||'操作失败')}}
+const setAdvisor=async(classId,teacherId)=>{try{await api('/uni/class-advisors','put',{classId,teacherId:teacherId||0});ElMessage.success('分配已更新');await load()}catch(e){ElMessage.error(e.message||'分配失败');await load()}}
+const props=defineProps({mode:{type:String,default:'accounts'}})
+onMounted(load)
+watch(()=>props.mode,()=>load())
+</script>
+<style scoped>
+.uni-teacher-panel{width:100%;min-width:0}.uni-panel-section{background:#fff;border:1px solid #e7edf5;border-radius:14px;padding:20px}.uni-panel-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}.uni-panel-heading h3{margin:0;font-size:16px;color:#1e293b}.uni-panel-heading p{margin:5px 0 0;color:#64748b;font-size:12px}@media(max-width:640px){.uni-panel-section{padding:12px}.uni-panel-heading{flex-wrap:wrap}}
+</style>

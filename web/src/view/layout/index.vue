@@ -3,7 +3,7 @@
     class="uni-admin-shell bg-gray-50 text-slate-700 dark:text-slate-500 dark:bg-slate-800 w-screen h-screen"
   >
     <el-watermark
-      v-if="config.show_watermark"
+      v-if="config.show_watermark && Number(userStore.userInfo.authorityId) !== 2001"
       :font="font"
       :z-index="9999"
       :gap="[180, 150]"

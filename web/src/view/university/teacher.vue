@@ -1,38 +1,71 @@
 <template>
-  <!-- UNI_ADMIN_V17_6_2 -->
-  <div class="uni-admin-v1762-page">
-    <header class="uni-admin-v1762-heading">
-      <div class="uni-admin-v1762-heading-copy">
-        <span class="uni-admin-v1762-eyebrow">UNIVERSITY MANAGEMENT</span>
-        <h1>教师管理</h1>
-        <p>教师档案、学院归属与在职状态</p>
-      </div>
-      <span class="uni-admin-v1762-heading-mark" aria-hidden="true">校务管理</span>
-    </header>
-    <div class="uni-admin-v1762-content">
+  <!-- UNI_TEACHER_MERGE_V17_6_8 -->
+  <div class="uni-merged-teacher">
+    <header class="uni-merged-heading"><div><h2>教师管理</h2><p>统一管理教师档案、登录账号与班级辅导员</p></div></header>
+    <el-tabs v-model="uniTeacherTab" class="uni-merged-tabs">
+      <el-tab-pane label="教师档案" name="profiles" />
+      <el-tab-pane label="登录账号" name="accounts" />
+      <el-tab-pane label="辅导员分配" name="advisors" />
+    </el-tabs>
+    <div v-show="uniTeacherTab==='profiles'" class="uni-merged-profile">
 
-  <div class="teacher-page">
-    <el-card shadow="never" class="hero">
-      <div class="hero-inner"><div><h2>教师管理</h2><p>维护本校教师档案、学院归属与在职状态</p></div><el-button type="primary" @click="openCreate">新增教师</el-button></div>
-    </el-card>
-    <el-card shadow="never" class="content">
-      <el-form inline @submit.prevent="search">
-        <el-form-item label="姓名 / 工号"><el-input v-model="keyword" clearable placeholder="输入姓名或工号" @keyup.enter="search" /></el-form-item>
-        <el-form-item label="学院"><el-select v-model="filterCollege" clearable placeholder="全部学院" style="width:190px" @change="search"><el-option v-for="c in colleges" :key="c.id" :label="c.name" :value="c.id" /></el-select></el-form-item>
-        <el-form-item><el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button></el-form-item>
+  <div class="uni-teacher-v1767">
+    <header class="teacher-heading">
+      <div>
+        <h1>教师管理</h1>
+        <p>管理教师档案、学院归属与在职状态</p>
+      </div>
+      <el-button type="primary" @click="openCreate">新增教师</el-button>
+    </header>
+
+    <section class="teacher-panel">
+      <div class="teacher-panel-top">
+        <div class="teacher-panel-title">教师档案 <span>共 {{ total }} 名教师</span></div>
+      </div>
+      <el-form class="teacher-filters" inline @submit.prevent="search">
+        <el-form-item label="姓名 / 工号">
+          <el-input v-model="keyword" clearable placeholder="搜索教师姓名或工号" @keyup.enter="search" />
+        </el-form-item>
+        <el-form-item label="所属学院">
+          <el-select v-model="filterCollege" clearable placeholder="全部学院" style="width:190px" @change="search">
+            <el-option v-for="c in colleges" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="teacher-filter-actions">
+          <el-button type="primary" @click="search">查询</el-button>
+          <el-button @click="reset">重置</el-button>
+        </el-form-item>
       </el-form>
-      <el-table v-loading="loading" :data="rows" stripe style="width:100%">
-        <el-table-column prop="teacherNo" label="教师工号" min-width="125" />
-        <el-table-column prop="name" label="姓名" min-width="110" />
-        <el-table-column label="所属学院" min-width="150"><template #default="{row}">{{collegeName(row.collegeId)}}</template></el-table-column>
-        <el-table-column prop="title" label="职称" min-width="100" />
-        <el-table-column prop="phone" label="电话" min-width="130" />
-        <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip />
-        <el-table-column label="状态" width="100"><template #default="{row}"><el-tag :type="row.status===1?'success':'info'">{{row.status===1?'在职':'停用'}}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="150" fixed="right"><template #default="{row}"><el-button link type="primary" @click="openEdit(row)">编辑</el-button><el-button link type="danger" @click="remove(row)">删除</el-button></template></el-table-column>
-      </el-table>
-      <div class="pager"><el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="search" /></div>
-    </el-card>
+
+      <div class="teacher-table-scroll">
+        <el-table v-loading="loading" :data="rows" style="width:100%" empty-text="暂无教师档案">
+          <el-table-column prop="teacherNo" label="教师工号" min-width="125" />
+          <el-table-column prop="name" label="姓名" min-width="110">
+            <template #default="{ row }"><span class="teacher-name">{{ row.name }}</span></template>
+          </el-table-column>
+          <el-table-column label="所属学院" min-width="150">
+            <template #default="{ row }">{{ collegeName(row.collegeId) }}</template>
+          </el-table-column>
+          <el-table-column prop="title" label="职称" min-width="100" />
+          <el-table-column prop="phone" label="电话" min-width="130" />
+          <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }"><el-tag size="small" :type="row.status===1?'success':'info'" effect="light">{{ row.status===1?'在职':'停用' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="remove(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div class="teacher-pager">
+        <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total"
+          :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next"
+          @current-change="load" @size-change="search" />
+      </div>
+    </section>
     <el-dialog v-model="dialog" :title="editing?'编辑教师':'新增教师'" width="min(560px,95vw)" append-to-body>
       <el-form label-width="100px" :model="form">
         <el-form-item label="教师工号" required><el-input v-model="form.teacherNo" maxlength="64" /></el-form-item>
@@ -49,9 +82,14 @@
   </div>
 
     </div>
+    <TeacherAccountPanel v-if="uniTeacherTab!=='profiles'" :mode="uniTeacherTab" />
   </div>
 </template>
 <script setup>
+import TeacherAccountPanel from './teacherAccountPanel.vue'
+import { ref as uniMergeRef } from 'vue'
+const uniTeacherTab = uniMergeRef('profiles')
+
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
@@ -70,55 +108,39 @@ const save=async()=>{const f=form.value;if(!f.teacherNo?.trim()||!f.name?.trim()
 const remove=async row=>{try{await ElMessageBox.confirm(`确定删除教师「${row.name}」？`,'删除确认',{type:'warning'});const r=await api('delete',undefined,{id:row.id});if(r?.code!==0)throw Error(r?.msg||'删除失败');ElMessage.success('已删除');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||'删除失败')}}
 onMounted(async()=>{await loadColleges();await load()})
 </script>
-<style scoped>.teacher-page{padding:20px;display:grid;gap:18px}.hero{background:linear-gradient(115deg,#eff6ff,#fff)}.hero-inner{display:flex;justify-content:space-between;align-items:center;gap:12px}.hero h2{margin:0;font-size:23px}.hero p{margin:8px 0 0;color:#64748b}.pager{display:flex;justify-content:flex-end;margin-top:18px}@media(max-width:600px){.teacher-page{padding:10px}.hero-inner{align-items:flex-start;flex-direction:column}.pager{overflow-x:auto}}
+<style scoped>
+.uni-teacher-v1767 { width:100%; min-width:0; max-width:none; padding:20px 24px 28px; color:#243247; box-sizing:border-box; }
+.teacher-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.teacher-heading h1 { margin:0; font-size:22px; font-weight:650; line-height:1.4; }
+.teacher-heading p { margin:5px 0 0; color:#738198; font-size:13px; }
+.teacher-panel { min-width:0; padding:20px; background:#fff; border:1px solid #e5eaf2; border-radius:14px; box-shadow:0 3px 16px rgba(30,52,87,.035); }
+.teacher-panel-top { display:flex; justify-content:space-between; align-items:center; padding-bottom:16px; }
+.teacher-panel-title { font-size:15px; font-weight:650; }
+.teacher-panel-title span { margin-left:12px; color:#8a96a9; font-size:12px; font-weight:400; }
+.teacher-filters { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin-bottom:12px; }
+.teacher-filters :deep(.el-form-item) { margin-right:0; margin-bottom:8px; }
+.teacher-filters :deep(.el-input) { width:220px; }
+.teacher-table-scroll { width:100%; overflow-x:auto; }
+.teacher-table-scroll :deep(.el-table) { min-width:850px; --el-table-header-bg-color:#f7f9fc; --el-table-border-color:#edf0f5; --el-table-row-hover-bg-color:#f7faff; }
+.teacher-table-scroll :deep(.el-table th.el-table__cell) { height:44px; color:#65748b; font-weight:600; }
+.teacher-table-scroll :deep(.el-table td.el-table__cell) { height:48px; }
+.teacher-name { font-weight:600; color:#27364d; }
+.teacher-pager { display:flex; justify-content:flex-end; padding-top:16px; overflow-x:auto; }
+.uni-teacher-v1767 :deep(.el-button--primary) { --el-button-bg-color:#2563eb; --el-button-border-color:#2563eb; }
+.uni-teacher-v1767 :deep(.el-input__wrapper), .uni-teacher-v1767 :deep(.el-select__wrapper) { border-radius:8px; }
+@media (max-width:768px) {
+  .uni-teacher-v1767 { padding:12px; }
+  .teacher-heading { align-items:flex-start; }
+  .teacher-heading h1 { font-size:19px; }
+  .teacher-panel { padding:14px; }
+  .teacher-filters { display:block; }
+  .teacher-filters :deep(.el-form-item) { display:flex; margin-bottom:12px; }
+  .teacher-filters :deep(.el-form-item__content) { flex:1; min-width:0; }
+  .teacher-filters :deep(.el-input), .teacher-filters :deep(.el-select) { width:100% !important; }
+  .teacher-pager { justify-content:flex-start; }
+}
 </style>
 
 <style scoped>
-
-/* UNIVERSITY_ADMIN_V17_4_BEGIN */
-/* Only applies to this Vue SFC; no global html/body or overflow changes. */
-:deep(.el-card) {
-  border: 1px solid #e7edf5;
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(24, 49, 86, .045);
-  background: #fff;
-}
-:deep(.el-card__header) {
-  padding: 18px 22px;
-  border-bottom: 1px solid #edf1f7;
-  font-weight: 650;
-  color: #1d2b43;
-}
-:deep(.el-card__body) { padding: 22px; }
-:deep(.el-button) { border-radius: 9px; font-weight: 550; }
-:deep(.el-button--primary) { --el-button-bg-color: #2563eb; --el-button-border-color: #2563eb; --el-button-hover-bg-color: #1d4ed8; --el-button-hover-border-color: #1d4ed8; }
-:deep(.el-input__wrapper),
-:deep(.el-select__wrapper),
-:deep(.el-textarea__inner) {
-  border-radius: 9px;
-  box-shadow: 0 0 0 1px #e2e8f0 inset;
-}
-:deep(.el-input__wrapper.is-focus),
-:deep(.el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px #2563eb inset; }
-:deep(.el-table) {
-  --el-table-header-bg-color: #f8fafd;
-  --el-table-border-color: #edf1f7;
-  --el-table-row-hover-bg-color: #f5f8ff;
-  border-radius: 12px;
-  font-size: 13px;
-}
-:deep(.el-table th.el-table__cell) { color: #53647d; font-weight: 650; }
-:deep(.el-table td.el-table__cell) { color: #27374f; }
-:deep(.el-tag) { border-radius: 7px; font-weight: 550; }
-:deep(.el-pagination) { margin-top: 16px; }
-:deep(.el-dialog) { border-radius: 18px; max-width: calc(100vw - 28px); }
-:deep(.el-dialog__header) { padding-bottom: 16px; border-bottom: 1px solid #edf1f7; }
-:deep(.el-form-item__label) { color: #40516a; font-weight: 550; }
-@media (max-width: 768px) {
-  :deep(.el-card__body) { padding: 14px; }
-  :deep(.el-card__header) { padding: 14px; }
-  :deep(.el-dialog) { width: calc(100vw - 24px) !important; margin: 5vh auto; }
-  :deep(.el-pagination) { flex-wrap: wrap; justify-content: center; row-gap: 8px; }
-}
-/* UNIVERSITY_ADMIN_V17_4_END */
+.uni-merged-teacher{padding:18px 20px 26px;width:100%;min-width:0;box-sizing:border-box}.uni-merged-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.uni-merged-heading h2{margin:0;font-size:21px;font-weight:650;color:#1e293b}.uni-merged-heading p{margin:5px 0 0;color:#64748b;font-size:12px}.uni-merged-tabs{margin-bottom:14px}.uni-merged-profile{min-width:0}.uni-merged-profile :deep(.hero){display:none!important}.uni-merged-profile :deep(.teacher-page){padding:0!important;display:block!important;max-width:none!important;width:100%!important}.uni-merged-profile :deep(.content){width:100%!important;max-width:none!important}.uni-merged-profile :deep(.content .el-card__body){padding:20px!important}@media(max-width:640px){.uni-merged-teacher{padding:12px}.uni-merged-profile :deep(.content .el-card__body){padding:12px!important}}
 </style>
