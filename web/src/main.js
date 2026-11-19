@@ -35,3 +35,6 @@ app
   .use(router)
   .mount('#app')
 export default app
+
+// V17.1 University SaaS design tokens and scoped components
+import './styles/university-design-system.css'

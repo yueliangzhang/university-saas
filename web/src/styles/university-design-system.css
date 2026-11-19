@@ -1,0 +1,54 @@
+/* University SaaS design system v17.1: additive, scoped and reusable */
+:root {
+  --uni-primary: #2563eb;
+  --uni-primary-hover: #1d4ed8;
+  --uni-primary-soft: #eff6ff;
+  --uni-bg: #f5f7fb;
+  --uni-surface: #ffffff;
+  --uni-text: #17243b;
+  --uni-muted: #64748b;
+  --uni-border: #e5eaf2;
+  --uni-radius-sm: 8px;
+  --uni-radius: 12px;
+  --uni-radius-lg: 16px;
+  --uni-shadow: 0 4px 20px rgba(15, 23, 42, .045);
+  --uni-space-1: 4px;
+  --uni-space-2: 8px;
+  --uni-space-3: 12px;
+  --uni-space-4: 16px;
+  --uni-space-5: 20px;
+  --uni-space-6: 24px;
+  --uni-space-8: 32px;
+}
+/* Opt-in scope avoids unintended changes to existing GVA layouts. */
+.uni-ui {
+  --el-color-primary: var(--uni-primary);
+  --el-color-primary-light-9: var(--uni-primary-soft);
+  --el-border-radius-base: var(--uni-radius-sm);
+  color: var(--uni-text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+.uni-ui, .uni-ui * { box-sizing: border-box; }
+.uni-ui .uni-page { padding: var(--uni-space-6); min-height: 100%; background: var(--uni-bg); }
+.uni-ui .uni-panel { background: var(--uni-surface); border: 1px solid var(--uni-border); border-radius: var(--uni-radius-lg); box-shadow: var(--uni-shadow); padding: var(--uni-space-6); }
+.uni-ui .uni-toolbar { display: flex; gap: var(--uni-space-3); align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: var(--uni-space-5); }
+.uni-ui .uni-toolbar__actions { display: flex; gap: var(--uni-space-2); align-items: center; flex-wrap: wrap; }
+.uni-ui .uni-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--uni-space-4); }
+.uni-ui .uni-muted { color: var(--uni-muted); }
+.uni-ui .el-button { border-radius: var(--uni-radius-sm); font-weight: 500; }
+.uni-ui .el-button--primary { --el-button-bg-color: var(--uni-primary); --el-button-border-color: var(--uni-primary); --el-button-hover-bg-color: var(--uni-primary-hover); --el-button-hover-border-color: var(--uni-primary-hover); }
+.uni-ui .el-input__wrapper, .uni-ui .el-select__wrapper { border-radius: var(--uni-radius-sm); }
+.uni-ui .el-table { --el-table-border-color: var(--uni-border); --el-table-header-bg-color: #f8fafc; border-radius: var(--uni-radius-sm); overflow: hidden; }
+.uni-ui .el-table th.el-table__cell { color: #475569; font-weight: 600; }
+.uni-ui .el-pagination { justify-content: flex-end; margin-top: var(--uni-space-5); flex-wrap: wrap; }
+.uni-ui .el-tag { border-radius: 6px; }
+.uni-ui .uni-section-title { margin: 0 0 var(--uni-space-4); font-size: 16px; font-weight: 650; }
+@media (max-width: 1100px) { .uni-ui .uni-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .uni-ui .uni-page { padding: var(--uni-space-3); }
+  .uni-ui .uni-panel { padding: var(--uni-space-4); border-radius: var(--uni-radius); }
+  .uni-ui .uni-grid { grid-template-columns: minmax(0, 1fr); }
+  .uni-ui .uni-toolbar { align-items: stretch; }
+  .uni-ui .uni-toolbar__actions { width: 100%; }
+  .uni-ui .uni-toolbar__actions > .el-button { margin-left: 0; }
+}
