@@ -1,5 +1,5 @@
 <template>
-  <div class="student-portal">
+  <div class="student-portal uni-ui">
     <template v-if="!token">
       <div class="login-layout">
         <section class="login-intro">
@@ -258,4 +258,42 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 .login-layout{display:grid;grid-template-columns:1fr 1fr;min-height:100vh}.login-intro{background:linear-gradient(150deg,#1d43bc,#3674ed);padding:10vh 9%;color:white;display:flex;flex-direction:column;justify-content:center}.brand-mark{width:58px;height:58px;margin-bottom:50px}.eyebrow{font-size:12px;letter-spacing:2.5px;color:#bed3ff;font-weight:700}.login-intro h1{font-size:clamp(36px,4.5vw,62px);line-height:1.2;margin:22px 0}.login-intro p{max-width:410px;color:#d6e3ff;font-size:15px;line-height:1.9}.intro-features{display:flex;flex-wrap:wrap;gap:22px;margin-top:46px}.intro-features span{display:flex;align-items:center;gap:7px;font-size:13px;color:#e2eaff}.login-panel{display:flex;align-items:center;justify-content:center;padding:30px;background:#f8faff}.login-card{width:min(100%,420px);background:white;padding:48px 40px;border-radius:18px;box-shadow:0 16px 60px rgba(33,65,120,.08)}.login-title{font-size:28px;font-weight:750;margin-bottom:12px}.login-card .muted{font-size:13px;line-height:1.7;margin:0 0 32px}.login-card :deep(.el-form-item){margin-bottom:23px}.login-button{width:100%;margin-top:8px}.ml-8{margin-left:8px}.login-help{text-align:center;color:#98a5b6;font-size:12px;margin-top:26px}.mobile-brand{display:none}
 @media(max-width:1100px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.content{padding:26px 24px 80px}.topbar{padding:0 24px}.sidebar{width:205px!important}.welcome-decoration{display:none}}
 @media(max-width:760px){.sidebar{display:none}.topbar{height:58px;padding:0 17px}.topbar-left{gap:8px;font-size:12px}.topbar-right{gap:7px}.topbar-icon,.topbar-separator{display:none}.content{padding:18px 14px 90px}.welcome-card{padding:25px 22px;min-height:185px}.welcome-card h1{font-size:24px}.stats-grid{gap:10px;margin:14px 0}.stat-card{padding:15px 12px;gap:10px}.stat-icon{width:37px;height:37px}.stat-value{font-size:22px}.stat-label{font-size:11px}.section-card{padding:15px;margin-top:14px}.section-header{align-items:flex-start}.page-heading h1{font-size:22px}.page-heading{align-items:flex-start}.filters{flex-direction:column}.filter-actions{width:100%;justify-content:space-between}.mobile-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e9edf5;z-index:100;padding:8px 4px max(8px,env(safe-area-inset-bottom));justify-content:space-around;box-shadow:0 -3px 16px rgba(32,50,85,.04)}.mobile-nav button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:4px;color:#8996a9;font-size:10px;padding:4px 6px}.mobile-nav button.active{color:#3266e8;font-weight:700}.login-layout{grid-template-columns:1fr}.login-intro{display:none}.login-panel{min-height:100vh;padding:18px}.login-card{padding:35px 25px}.mobile-brand{display:flex;align-items:center;gap:8px;color:#3266e8;font-weight:750;margin-bottom:40px}.profile-banner{padding:22px}.profile-details{margin:18px}.profile-hint{margin:0 18px 22px}}
+</style>
+
+<style scoped>
+/* V17.2 STUDENT PORTAL VISUAL UPGRADE */
+.student-portal.uni-ui { --uni-primary:#2563eb; --uni-primary-hover:#1d4ed8; --uni-border:#e5eaf2; --uni-bg:#f5f7fb; background:var(--uni-bg); color:var(--uni-text,#17243b); }
+.student-portal.uni-ui :deep(.el-button--primary) { --el-button-bg-color:var(--uni-primary); --el-button-border-color:var(--uni-primary); --el-button-hover-bg-color:var(--uni-primary-hover); --el-button-hover-border-color:var(--uni-primary-hover); }
+.student-portal.uni-ui :deep(.el-input__wrapper), .student-portal.uni-ui :deep(.el-select__wrapper) { border-radius:10px; min-height:38px; }
+.student-portal.uni-ui :deep(.el-button) { border-radius:10px; }
+.student-portal.uni-ui :deep(.el-table) { --el-table-header-bg-color:#f8fafc; --el-table-row-hover-bg-color:#f3f7ff; }
+.student-portal.uni-ui .sidebar { border-right:1px solid var(--uni-border); box-shadow:4px 0 24px rgba(15,23,42,.018); }
+.student-portal.uni-ui .nav-item { transition:background-color .18s ease,color .18s ease,transform .18s ease; }
+.student-portal.uni-ui .nav-item:focus-visible,.student-portal.uni-ui .mobile-nav button:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+.student-portal.uni-ui .nav-item.active { background:#eaf1ff; color:var(--uni-primary); }
+.student-portal.uni-ui .brand-icon,.student-portal.uni-ui .brand-mark { background:var(--uni-primary); }
+.student-portal.uni-ui .topbar { border-bottom:1px solid var(--uni-border); }
+.student-portal.uni-ui .content { max-width:1460px; }
+.student-portal.uni-ui .welcome-card { background:linear-gradient(112deg,#183b9b 0%,#2563eb 65%,#4385f6 100%); border-radius:20px; box-shadow:0 14px 34px rgba(37,99,235,.15); }
+.student-portal.uni-ui .welcome-card :deep(.el-button) { color:#1d4ed8; }
+.student-portal.uni-ui .stat-card,.student-portal.uni-ui .section-card { border-color:var(--uni-border); border-radius:16px; box-shadow:0 5px 22px rgba(15,23,42,.035); transition:box-shadow .2s ease,transform .2s ease; }
+@media(hover:hover) { .student-portal.uni-ui .stat-card:hover { transform:translateY(-2px); box-shadow:0 10px 28px rgba(15,23,42,.07); } }
+.student-portal.uni-ui .stat-value { letter-spacing:-.7px; }
+.student-portal.uni-ui .page-heading h1 { letter-spacing:-.6px; }
+.student-portal.uni-ui .section-header h2 { color:#1e293b; }
+.student-portal.uni-ui .login-intro { background:radial-gradient(circle at 15% 12%,rgba(147,197,253,.18),transparent 35%),linear-gradient(145deg,#132c78,#2563eb 80%); }
+.student-portal.uni-ui .login-card { border:1px solid var(--uni-border); box-shadow:0 20px 70px rgba(22,45,94,.09); }
+.student-portal.uni-ui .login-title { letter-spacing:-.8px; }
+.student-portal.uni-ui .profile-banner { background:linear-gradient(105deg,#edf4ff,#f8fbff); }
+.student-portal.uni-ui .security-icon { background:#eaf1ff; color:var(--uni-primary); }
+.student-portal.uni-ui .mobile-nav { border-color:var(--uni-border); }
+.student-portal.uni-ui .mobile-nav button.active { color:var(--uni-primary); }
+@media(max-width:760px) {
+ .student-portal.uni-ui .welcome-card { border-radius:16px; }
+ .student-portal.uni-ui .stat-card,.student-portal.uni-ui .section-card { border-radius:13px; }
+ .student-portal.uni-ui .login-card { padding:32px 24px; }
+ .student-portal.uni-ui .mobile-nav button { min-width:44px; min-height:44px; justify-content:center; }
+ .student-portal.uni-ui .pagination { overflow-x:auto; }
+}
+@media(prefers-reduced-motion:reduce) { .student-portal.uni-ui .nav-item,.student-portal.uni-ui .stat-card { transition:none; transform:none; } }
 </style>
