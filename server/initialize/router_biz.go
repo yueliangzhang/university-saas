@@ -22,4 +22,5 @@ func initBizRouter(routers ...*gin.RouterGroup) {
 	universityRouter.InitWorkspaceRouter(privateGroup)
 	universityRouter.InitOrganizationRouter(privateGroup)
 	universityRouter.InitStudentRouter(privateGroup)
+	universityRouter.InitLeaveRouter(privateGroup)
 }
