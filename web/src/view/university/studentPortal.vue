@@ -258,6 +258,27 @@ onUnmounted(() => window.removeEventListener('resize', onResize))
 .login-layout{display:grid;grid-template-columns:1fr 1fr;min-height:100vh}.login-intro{background:linear-gradient(150deg,#1d43bc,#3674ed);padding:10vh 9%;color:white;display:flex;flex-direction:column;justify-content:center}.brand-mark{width:58px;height:58px;margin-bottom:50px}.eyebrow{font-size:12px;letter-spacing:2.5px;color:#bed3ff;font-weight:700}.login-intro h1{font-size:clamp(36px,4.5vw,62px);line-height:1.2;margin:22px 0}.login-intro p{max-width:410px;color:#d6e3ff;font-size:15px;line-height:1.9}.intro-features{display:flex;flex-wrap:wrap;gap:22px;margin-top:46px}.intro-features span{display:flex;align-items:center;gap:7px;font-size:13px;color:#e2eaff}.login-panel{display:flex;align-items:center;justify-content:center;padding:30px;background:#f8faff}.login-card{width:min(100%,420px);background:white;padding:48px 40px;border-radius:18px;box-shadow:0 16px 60px rgba(33,65,120,.08)}.login-title{font-size:28px;font-weight:750;margin-bottom:12px}.login-card .muted{font-size:13px;line-height:1.7;margin:0 0 32px}.login-card :deep(.el-form-item){margin-bottom:23px}.login-button{width:100%;margin-top:8px}.ml-8{margin-left:8px}.login-help{text-align:center;color:#98a5b6;font-size:12px;margin-top:26px}.mobile-brand{display:none}
 @media(max-width:1100px){.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.content{padding:26px 24px 80px}.topbar{padding:0 24px}.sidebar{width:205px!important}.welcome-decoration{display:none}}
 @media(max-width:760px){.sidebar{display:none}.topbar{height:58px;padding:0 17px}.topbar-left{gap:8px;font-size:12px}.topbar-right{gap:7px}.topbar-icon,.topbar-separator{display:none}.content{padding:18px 14px 90px}.welcome-card{padding:25px 22px;min-height:185px}.welcome-card h1{font-size:24px}.stats-grid{gap:10px;margin:14px 0}.stat-card{padding:15px 12px;gap:10px}.stat-icon{width:37px;height:37px}.stat-value{font-size:22px}.stat-label{font-size:11px}.section-card{padding:15px;margin-top:14px}.section-header{align-items:flex-start}.page-heading h1{font-size:22px}.page-heading{align-items:flex-start}.filters{flex-direction:column}.filter-actions{width:100%;justify-content:space-between}.mobile-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #e9edf5;z-index:100;padding:8px 4px max(8px,env(safe-area-inset-bottom));justify-content:space-around;box-shadow:0 -3px 16px rgba(32,50,85,.04)}.mobile-nav button{border:0;background:transparent;display:flex;flex-direction:column;align-items:center;gap:4px;color:#8996a9;font-size:10px;padding:4px 6px}.mobile-nav button.active{color:#3266e8;font-weight:700}.login-layout{grid-template-columns:1fr}.login-intro{display:none}.login-panel{min-height:100vh;padding:18px}.login-card{padding:35px 25px}.mobile-brand{display:flex;align-items:center;gap:8px;color:#3266e8;font-weight:750;margin-bottom:40px}.profile-banner{padding:22px}.profile-details{margin:18px}.profile-hint{margin:0 18px 22px}}
+
+/* V17 Scroll Fix */
+html, body {
+  overflow-y: auto;
+}
+
+.uni-portal,
+.teacher-portal,
+.student-portal,
+.portal-layout,
+.portal-main,
+.portal-content {
+  height: auto;
+  min-height: 100vh;
+  overflow-y: visible;
+}
+
+.el-main {
+  overflow-y: auto;
+}
+
 </style>
 
 <style scoped>

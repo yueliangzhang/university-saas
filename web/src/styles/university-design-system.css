@@ -52,3 +52,36 @@
   .uni-ui .uni-toolbar__actions { width: 100%; }
   .uni-ui .uni-toolbar__actions > .el-button { margin-left: 0; }
 }
+
+/* UNIVERSITY_V17_5_UX_BEGIN */
+/* Opt-in scope: no html/body, root layout height, or scroll locking changes. */
+.uni-ui :is(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+.uni-ui :is(.el-button, .el-input, .el-select, .el-checkbox, .el-radio) { transition-duration: .15s; }
+.uni-ui :is(.el-button, .el-input, .el-select) { max-width: 100%; }
+.uni-ui .el-form-item__error { line-height: 1.5; overflow-wrap: anywhere; }
+.uni-ui .el-alert { border-radius: 10px; }
+.uni-ui .el-skeleton { max-width: 100%; }
+.uni-ui .el-empty { max-width: 100%; }
+.uni-ui .el-pagination { display: flex; flex-wrap: wrap; gap: 8px 4px; }
+.uni-ui .el-table { max-width: 100%; }
+.uni-ui .el-dialog__body { overflow-wrap: anywhere; }
+.uni-ui :is(.el-tag, .el-button) { white-space: normal; }
+@media (max-width: 767px) {
+  .uni-ui .el-card__body { overflow-wrap: anywhere; }
+  .uni-ui .el-pagination { justify-content: center; }
+  .uni-ui .el-pagination .el-pagination__sizes { max-width: 100%; }
+  .uni-ui .el-form-item__content { min-width: 0; }
+  .uni-ui .el-dialog { max-width: calc(100vw - 24px); }
+  .uni-ui .el-message-box { max-width: calc(100vw - 24px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .uni-ui *, .uni-ui *::before, .uni-ui *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* UNIVERSITY_V17_5_UX_END */

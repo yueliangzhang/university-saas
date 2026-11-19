@@ -1,5 +1,5 @@
 <template>
-  <div class="gva-tabs">
+  <div class="gva-tabs uni-admin-tabs">
     <el-tabs
       v-model="activeValue"
       :closable="!(historys.length === 1 && $route.name === defaultRouter)"

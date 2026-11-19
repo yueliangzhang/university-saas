@@ -1,6 +1,6 @@
 <template>
   <div
-    class="bg-gray-50 text-slate-700 dark:text-slate-500 dark:bg-slate-800 w-screen h-screen"
+    class="uni-admin-shell bg-gray-50 text-slate-700 dark:text-slate-500 dark:bg-slate-800 w-screen h-screen"
   >
     <el-watermark
       v-if="config.show_watermark"
@@ -66,6 +66,7 @@
   import { useAppStore } from '@/pinia'
   import { storeToRefs } from 'pinia'
   import '@/style/transition.scss'
+  import '@/styles/university-admin-v17-6.css'
   const appStore = useAppStore()
   const { config, isDark, device } = storeToRefs(appStore)
 
