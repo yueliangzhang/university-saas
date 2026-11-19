@@ -31,6 +31,15 @@ const routes = [
     },
     component: () => import('@/view/error/index.vue')
   },
+  {
+  path: '/student/login',
+  name: 'studentLogin',
+  component: () => import('@/view/university/studentPortal.vue'),
+  meta: {
+    title: '学生登录',
+    client: true
+  }
+}
 ]
 
 const router = createRouter({

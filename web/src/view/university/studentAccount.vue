@@ -1,0 +1,37 @@
+<template>
+  <div class="p-4">
+    <el-card>
+      <template #header><b>学生账号管理</b></template>
+      <div class="mb-4 flex gap-2"><el-input v-model="keyword" placeholder="姓名或学号" clearable style="width:240px" @keyup.enter="load"/><el-button type="primary" @click="load">查询</el-button></div>
+      <el-table v-loading="loading" :data="rows" border>
+        <el-table-column prop="studentNo" label="学号"/><el-table-column prop="name" label="姓名"/>
+        <el-table-column label="账号状态"><template #default="{row}">{{row.status===0?'未开通':row.status===1?'正常':'停用'}}</template></el-table-column>
+        <el-table-column prop="lastLoginAt" label="最后登录"/>
+        <el-table-column label="操作" width="270"><template #default="{row}">
+          <el-button v-if="row.status===0" type="primary" link @click="openPassword(row,false)">开通</el-button>
+          <el-button v-else type="primary" link @click="openPassword(row,true)">重置密码</el-button>
+          <el-button v-if="row.status!==0" type="warning" link @click="toggle(row)">{{row.status===1?'停用':'启用'}}</el-button>
+        </template></el-table-column>
+      </el-table>
+      <el-pagination class="mt-4" background layout="total,prev,pager,next" :total="total" :page-size="20" v-model:current-page="page" @current-change="load"/>
+    </el-card>
+    <el-dialog v-model="dialog" :title="reset?'重置学生密码':'开通学生账号'" width="440px">
+      <p class="mb-3">{{selected?.name}}（{{selected?.studentNo}}）</p>
+      <el-input v-model="password" type="password" show-password placeholder="设置至少12位的初始密码" autocomplete="new-password"/>
+      <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">确认</el-button></template>
+    </el-dialog>
+  </div>
+</template>
+<script setup>
+import {ref,onMounted} from 'vue'
+import {ElMessage,ElMessageBox} from 'element-plus'
+import request from '@/utils/request'
+const rows=ref([]),total=ref(0),page=ref(1),keyword=ref(''),loading=ref(false),saving=ref(false)
+const dialog=ref(false),reset=ref(false),selected=ref(null),password=ref('')
+const api=(url,method='get',data,params)=>request({url,method,data,params})
+const load=async()=>{loading.value=true;try{const r=await api('/uni/student-accounts','get',undefined,{page:page.value,pageSize:20,keyword:keyword.value});if(r?.code!==0)throw Error(r?.msg||'查询失败');rows.value=r.data?.list||[];total.value=r.data?.total||0}catch(e){ElMessage.error(e.message||'查询失败')}finally{loading.value=false}}
+const openPassword=(row,isReset)=>{selected.value=row;reset.value=isReset;password.value='';dialog.value=true}
+const save=async()=>{if(password.value.length<12){ElMessage.warning('密码至少12位');return}saving.value=true;try{const url=reset.value?'/uni/student-accounts/reset-password':'/uni/student-accounts';const r=await api(url,'post',{studentId:selected.value.studentId,password:password.value});if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('操作成功');dialog.value=false;password.value='';await load()}catch(e){ElMessage.error(e.message||'保存失败')}finally{saving.value=false}}
+const toggle=async row=>{try{await ElMessageBox.confirm(`确定${row.status===1?'停用':'启用'}该账号？`,'确认');const r=await api('/uni/student-accounts/status','put',{studentId:row.studentId,status:row.status===1?2:1});if(r?.code!==0)throw Error(r?.msg||'操作失败');await load()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'操作失败')}}
+onMounted(load)
+</script>

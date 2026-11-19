@@ -165,6 +165,12 @@ router.beforeEach(async (to, from) => {
   await routerStore.handleKeepAlive(to)
   // 设置页面标题
   document.title = getPageTitle(to.meta.title, to)
+
+  // V13：学生登录页面独立于 GVA 管理员认证
+  if (to.path === '/student/login') {
+    return true
+  }
+  
   if (to.meta.client) {
     return true
   }
