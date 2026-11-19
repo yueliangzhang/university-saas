@@ -31,7 +31,8 @@ const routes = [
     },
     component: () => import('@/view/error/index.vue')
   },
-  {
+  { path: '/teacher/login', name: 'teacherPortalLogin', component: () => import('@/view/university/teacherPortal.vue'), meta: { client: true } },
+    {
   path: '/student/login',
   name: 'studentLogin',
   component: () => import('@/view/university/studentPortal.vue'),

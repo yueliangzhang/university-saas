@@ -1,0 +1,41 @@
+<template>
+  <div class="teacher-portal">
+    <div class="topbar"><div class="brand">🎓 高校教师服务平台</div><el-button v-if="token" plain @click="logout">退出登录</el-button></div>
+    <div v-if="!token" class="login-wrap"><el-card shadow="never"><h2>教师登录</h2><p class="muted">使用高校 ID、教师工号和管理员分配的密码</p><el-form label-position="top" @submit.prevent="login"><el-form-item label="高校 ID"><el-input v-model="loginForm.tenantId" /></el-form-item><el-form-item label="教师工号"><el-input v-model="loginForm.teacherNo" /></el-form-item><el-form-item label="密码"><el-input v-model="loginForm.password" type="password" show-password autocomplete="current-password" /></el-form-item><el-button native-type="submit" type="primary" :loading="busy" style="width:100%">登录教师门户</el-button></el-form></el-card></div>
+    <main v-else class="main"><div class="welcome"><div><h2>你好，{{me?.name || '老师'}}</h2><p class="muted">工号：{{me?.teacherNo}} · {{me?.title || '教师'}} · 所属学院 ID：{{me?.collegeId}}</p></div><el-button type="primary" @click="refresh">刷新数据</el-button></div>
+      <el-row :gutter="16" class="stats"><el-col :xs="12" :sm="8"><el-card shadow="never"><div class="muted">负责班级</div><h2>{{classes.length}}</h2></el-card></el-col><el-col :xs="12" :sm="8"><el-card shadow="never"><div class="muted">待审批申请（当前筛选）</div><h2>{{status==='pending'?total:'—'}}</h2></el-card></el-col><el-col :xs="24" :sm="8"><el-card shadow="never"><div class="muted">请假记录（当前筛选）</div><h2>{{total}}</h2></el-card></el-col></el-row>
+      <el-card shadow="never" class="section"><template #header><b>我的负责班级</b></template><el-empty v-if="!classes.length" description="管理员尚未分配班级" :image-size="72"/><el-tag v-for="cl in classes" :key="cl.id" style="margin:4px">{{cl.name}}（{{cl.code}}）</el-tag></el-card>
+      <el-card shadow="never" class="section"><template #header><div class="section-header"><b>学生请假审批</b><el-select v-model="status" style="width:140px" @change="search"><el-option label="待审批" value="pending"/><el-option label="全部记录" value=""/><el-option label="已通过" value="approved"/><el-option label="已驳回" value="rejected"/></el-select></div></template>
+        <el-table v-loading="loading" :data="rows" style="width:100%"><el-table-column prop="studentName" label="学生" min-width="95"/><el-table-column prop="studentNo" label="学号" min-width="105"/><el-table-column label="类型" width="75"><template #default="{row}">{{types[row.leaveType]||row.leaveType}}</template></el-table-column><el-table-column label="时间" min-width="180"><template #default="{row}">{{fmt(row.startAt)}} 至 {{fmt(row.endAt)}}</template></el-table-column><el-table-column prop="reason" label="请假原因" min-width="140" show-overflow-tooltip/><el-table-column label="状态" width="95"><template #default="{row}"><el-tag :type="colors[row.status]||'info'">{{statuses[row.status]||row.status}}</el-tag></template></el-table-column><el-table-column prop="reviewNote" label="审批备注" min-width="120" show-overflow-tooltip/><el-table-column label="操作" width="140" fixed="right"><template #default="{row}"><template v-if="row.status==='pending'"><el-button type="success" link @click="review(row,'approved')">通过</el-button><el-button type="danger" link @click="review(row,'rejected')">驳回</el-button></template></template></el-table-column></el-table>
+        <el-pagination class="pager" v-model:current-page="page" :page-size="10" :total="total" layout="total,prev,pager,next" @current-change="loadLeaves" />
+      </el-card>
+      <el-card shadow="never" class="section"><template #header><b>账号安全</b></template><el-button @click="changeDialog=true">修改密码</el-button></el-card>
+    </main>
+    <el-dialog v-model="changeDialog" title="修改登录密码" width="min(460px,94vw)"><el-form label-position="top"><el-form-item label="旧密码"><el-input v-model="oldPassword" type="password" show-password/></el-form-item><el-form-item label="新密码（至少12位）"><el-input v-model="newPassword" type="password" show-password/></el-form-item></el-form><template #footer><el-button @click="changeDialog=false">取消</el-button><el-button type="primary" :loading="busy" @click="changePassword">确认修改</el-button></template></el-dialog>
+  </div>
+</template>
+<script setup>
+import {ref,onMounted} from 'vue'
+import {ElMessage,ElMessageBox} from 'element-plus'
+import axios from 'axios'
+const base=(import.meta.env.VITE_BASE_API||'/api').replace(/\/$/,'')
+const client=axios.create({baseURL:base,timeout:15000})
+const token=ref(sessionStorage.getItem('uni_teacher_token')||'')
+const loginForm=ref({tenantId:'',teacherNo:'',password:''}),me=ref(null),classes=ref([]),rows=ref([]),total=ref(0),page=ref(1),status=ref('pending'),loading=ref(false),busy=ref(false)
+const changeDialog=ref(false),oldPassword=ref(''),newPassword=ref('')
+const types={personal:'事假',sick:'病假',other:'其他'},statuses={pending:'待审批',approved:'已通过',rejected:'已驳回',cancelled:'已撤销'},colors={pending:'warning',approved:'success',rejected:'danger',cancelled:'info'}
+const fmt=s=>s?String(s).replace('T',' ').slice(0,16):''
+const error=e=>e.response?.data?.msg||e.message||'操作失败'
+const call=async(url,method='get',data,params)=>{const r=await client({url:`/uni/teacher-portal${url}`,method,data,params,headers:token.value?{Authorization:`Bearer ${token.value}`}:{}});if(r.data?.code!==0)throw Error(r.data?.msg||'请求失败');return r.data.data}
+const clear=()=>{token.value='';sessionStorage.removeItem('uni_teacher_token');me.value=null;classes.value=[];rows.value=[];total.value=0}
+const loadLeaves=async()=>{if(!token.value)return;loading.value=true;try{const d=await call('/leaves','get',undefined,{page:page.value,pageSize:10,status:status.value});rows.value=d?.list||[];total.value=d?.total||0}catch(e){ElMessage.error(error(e))}finally{loading.value=false}}
+const refresh=async()=>{if(!token.value)return;try{me.value=await call('/me');const d=await call('/classes');classes.value=d?.list||[];await loadLeaves()}catch(e){ElMessage.error(error(e));if(e.response?.status===401)clear()}}
+const login=async()=>{busy.value=true;try{const d=await call('/login','post',{tenantId:Number(loginForm.value.tenantId),teacherNo:loginForm.value.teacherNo,password:loginForm.value.password});token.value=d.token;sessionStorage.setItem('uni_teacher_token',d.token);loginForm.value.password='';await refresh()}catch(e){ElMessage.error(error(e))}finally{busy.value=false}}
+const logout=async()=>{try{await call('/logout','post',{})}catch(e){}finally{clear()}}
+const search=()=>{page.value=1;loadLeaves()}
+const review=async(row,action)=>{try{const result=await ElMessageBox.prompt(action==='rejected'?'请填写驳回原因':'审批备注（可留空）',action==='rejected'?'驳回申请':'通过申请',{inputValidator:v=>action!=='rejected'||!!v?.trim(),inputErrorMessage:'驳回原因不能为空'});await call('/leaves/review','post',{id:row.id,action,note:result.value||''});ElMessage.success('审批完成');await loadLeaves()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(error(e))}}
+const changePassword=async()=>{busy.value=true;try{await call('/change-password','post',{oldPassword:oldPassword.value,newPassword:newPassword.value});ElMessage.success('密码已修改，请重新登录');changeDialog.value=false;oldPassword.value='';newPassword.value='';clear()}catch(e){ElMessage.error(error(e))}finally{busy.value=false}}
+onMounted(()=>{if(token.value)refresh()})
+</script>
+<style scoped>.teacher-portal{min-height:100vh;background:#f4f7fb;color:#1e293b}.topbar{background:#fff;padding:18px max(24px,calc((100vw - 1200px)/2));display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e2e8f0}.brand{font-size:19px;font-weight:700;color:#1d4ed8}.login-wrap{max-width:430px;margin:90px auto;padding:0 16px}.login-wrap h2{margin:0 0 8px}.muted{color:#64748b;font-size:13px}.main{max-width:1200px;margin:0 auto;padding:28px 18px}.welcome,.section-header{display:flex;justify-content:space-between;align-items:center;gap:12px}.welcome h2{margin:0}.stats{margin:20px 0}.stats h2{margin:8px 0 0;font-size:30px}.section{margin-bottom:18px}.pager{margin-top:16px;display:flex;justify-content:flex-end}@media(max-width:600px){.welcome{align-items:flex-start;flex-direction:column}.main{padding:14px 10px}.topbar{padding:14px}}
+</style>

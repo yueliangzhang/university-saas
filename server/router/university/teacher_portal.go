@@ -1,0 +1,434 @@
+package university
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/flipped-aurora/gin-vue-admin/server/global"
+	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+)
+
+// Teacher sessions are separate from administrator JWTs and student sessions.
+const teacherTenantKey = "uniTeacherTenantID"
+const teacherIDKey = "uniTeacherID"
+const teacherAccountKey = "uniTeacherAccountID"
+
+func teacherPortalFail(c *gin.Context, status int, msg string) {
+	c.JSON(status, gin.H{"code": 7, "msg": msg})
+}
+func teacherPortalOK(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "成功", "data": data})
+}
+func teacherPortalAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		if !strings.HasPrefix(header, "Bearer ") {
+			teacherPortalFail(c, 401, "请先登录教师端")
+			c.Abort()
+			return
+		}
+		token := strings.TrimPrefix(header, "Bearer ")
+		if len(token) != 43 {
+			teacherPortalFail(c, 401, "凭证无效")
+			c.Abort()
+			return
+		}
+		var row struct {
+			AccountID uint64 `gorm:"column:account_id"`
+			TeacherID uint64 `gorm:"column:teacher_id"`
+			TenantID  uint64 `gorm:"column:tenant_id"`
+		}
+		err := global.GVA_DB.Table("uni_teacher_sessions s").Select("s.account_id,a.teacher_id,a.tenant_id").
+			Joins("JOIN uni_teacher_accounts a ON a.tenant_id=s.tenant_id AND a.id=s.account_id").
+			Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").
+			Joins("JOIN uni_tenants u ON u.id=a.tenant_id").
+			Where("s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND a.status=1 AND t.status=1 AND u.status=1", studentHashToken(token), time.Now()).Take(&row).Error
+		if err != nil {
+			teacherPortalFail(c, 401, "教师登录已失效")
+			c.Abort()
+			return
+		}
+		c.Set(teacherTenantKey, row.TenantID)
+		c.Set(teacherIDKey, row.TeacherID)
+		c.Set(teacherAccountKey, row.AccountID)
+		c.Next()
+	}
+}
+func teacherPortalLogin(c *gin.Context) {
+	var in struct {
+		TenantID  uint64 `json:"tenantId"`
+		TeacherNo string `json:"teacherNo"`
+		Password  string `json:"password"`
+	}
+	if c.ShouldBindJSON(&in) != nil || in.TenantID == 0 || len(in.TeacherNo) == 0 || len(in.TeacherNo) > 64 || len(in.Password) > 256 {
+		teacherPortalFail(c, 400, "参数不合法")
+		return
+	}
+	var row struct {
+		AccountID    uint64 `gorm:"column:account_id"`
+		TeacherID    uint64 `gorm:"column:teacher_id"`
+		TenantID     uint64 `gorm:"column:tenant_id"`
+		PasswordHash string `gorm:"column:password_hash"`
+	}
+	err := global.GVA_DB.Table("uni_teacher_accounts a").Select("a.id account_id,a.teacher_id,a.tenant_id,a.password_hash").
+		Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").Joins("JOIN uni_tenants u ON u.id=a.tenant_id").
+		Where("a.tenant_id=? AND t.teacher_no=? AND a.status=1 AND t.status=1 AND u.status=1", in.TenantID, strings.TrimSpace(in.TeacherNo)).Take(&row).Error
+	if err != nil || bcrypt.CompareHashAndPassword([]byte(row.PasswordHash), []byte(in.Password)) != nil {
+		teacherPortalFail(c, 401, "高校、工号或密码错误")
+		return
+	}
+	random := make([]byte, 32)
+	if _, err = rand.Read(random); err != nil {
+		teacherPortalFail(c, 500, "创建会话失败")
+		return
+	}
+	token := base64.RawURLEncoding.EncodeToString(random)
+	expires := time.Now().Add(12 * time.Hour)
+	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		if e := tx.Table("uni_teacher_sessions").Create(map[string]interface{}{"tenant_id": row.TenantID, "account_id": row.AccountID, "token_hash": studentHashToken(token), "expires_at": expires}).Error; e != nil {
+			return e
+		}
+		return tx.Table("uni_teacher_accounts").Where("tenant_id=? AND id=?", row.TenantID, row.AccountID).Update("last_login_at", time.Now()).Error
+	})
+	if err != nil {
+		teacherPortalFail(c, 500, "创建会话失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"token": token, "expiresAt": expires})
+}
+func teacherPortalMe(c *gin.Context) {
+	var row uniTeacher
+	if err := global.GVA_DB.Where("tenant_id=? AND id=?", c.GetUint64(teacherTenantKey), c.GetUint64(teacherIDKey)).Take(&row).Error; err != nil {
+		teacherPortalFail(c, 404, "教师不存在")
+		return
+	}
+	teacherPortalOK(c, row)
+}
+func teacherPortalChangePassword(c *gin.Context) {
+	var in struct {
+		OldPassword string `json:"oldPassword"`
+		NewPassword string `json:"newPassword"`
+	}
+	if c.ShouldBindJSON(&in) != nil || !studentPasswordValid(in.NewPassword) {
+		teacherPortalFail(c, 400, "新密码至少12位，最多72字节")
+		return
+	}
+	tid := c.GetUint64(teacherTenantKey)
+	aid := c.GetUint64(teacherAccountKey)
+	var account struct {
+		PasswordHash string `gorm:"column:password_hash"`
+	}
+	if err := global.GVA_DB.Table("uni_teacher_accounts").Select("password_hash").Where("tenant_id=? AND id=?", tid, aid).Take(&account).Error; err != nil {
+		teacherPortalFail(c, 401, "账号不存在")
+		return
+	}
+	if bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), []byte(in.OldPassword)) != nil {
+		teacherPortalFail(c, 401, "旧密码错误")
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		teacherPortalFail(c, 500, "密码处理失败")
+		return
+	}
+	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		r := tx.Table("uni_teacher_accounts").Where("tenant_id=? AND id=? AND password_hash=?", tid, aid, account.PasswordHash).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now()})
+		if r.Error != nil {
+			return r.Error
+		}
+		if r.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Exec("UPDATE uni_teacher_sessions SET revoked_at=NOW(3) WHERE tenant_id=? AND account_id=? AND revoked_at IS NULL", tid, aid).Error
+	})
+	if err != nil {
+		teacherPortalFail(c, 409, "修改失败，请重试")
+		return
+	}
+	teacherPortalOK(c, gin.H{"changed": true})
+}
+func teacherPortalLogout(c *gin.Context) {
+	token := strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer ")
+	if err := global.GVA_DB.Table("uni_teacher_sessions").Where("tenant_id=? AND account_id=? AND token_hash=?", c.GetUint64(teacherTenantKey), c.GetUint64(teacherAccountKey), studentHashToken(token)).Update("revoked_at", time.Now()).Error; err != nil {
+		teacherPortalFail(c, 500, "退出失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"loggedOut": true})
+}
+func teacherAssignedClasses(c *gin.Context) {
+	tid := c.GetUint64(teacherTenantKey)
+	teacher := c.GetUint64(teacherIDKey)
+	var rows []struct {
+		ID   uint64 `json:"id"`
+		Name string `json:"name"`
+		Code string `json:"code"`
+	}
+	if err := global.GVA_DB.Table("uni_class_advisors a").Select("cl.id,cl.name,cl.code").Joins("JOIN uni_classes cl ON cl.tenant_id=a.tenant_id AND cl.id=a.class_id").Where("a.tenant_id=? AND a.teacher_id=?", tid, teacher).Order("cl.id").Scan(&rows).Error; err != nil {
+		teacherPortalFail(c, 500, "查询班级失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"list": rows})
+}
+func teacherLeaveList(c *gin.Context) {
+	tid := c.GetUint64(teacherTenantKey)
+	teacher := c.GetUint64(teacherIDKey)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	if page > 1000000 {
+		page = 1000000
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	if size < 1 {
+		size = 10
+	}
+	if size > 100 {
+		size = 100
+	}
+	q := global.GVA_DB.Table("uni_leave_requests l").Joins("JOIN uni_students s ON s.tenant_id=l.tenant_id AND s.id=l.student_id").Joins("JOIN uni_class_advisors a ON a.tenant_id=s.tenant_id AND a.class_id=s.class_id AND a.teacher_id=?", teacher).Where("l.tenant_id=?", tid)
+	if status := c.Query("status"); status != "" {
+		if !leaveStatusValid(status) {
+			teacherPortalFail(c, 400, "状态不合法")
+			return
+		}
+		q = q.Where("l.status=?", status)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		teacherPortalFail(c, 500, "查询失败")
+		return
+	}
+	var rows []struct {
+		ID          uint64    `json:"id"`
+		StudentID   uint64    `json:"studentId"`
+		StudentName string    `json:"studentName"`
+		StudentNo   string    `json:"studentNo"`
+		LeaveType   string    `json:"leaveType"`
+		Reason      string    `json:"reason"`
+		StartAt     time.Time `json:"startAt"`
+		EndAt       time.Time `json:"endAt"`
+		Status      string    `json:"status"`
+		ReviewNote  string    `json:"reviewNote"`
+	}
+	if err := q.Select("l.id,l.student_id,s.name student_name,s.student_no,l.leave_type,l.reason,l.start_at,l.end_at,l.status,l.review_note").Order("l.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
+		teacherPortalFail(c, 500, "查询失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"list": rows, "total": total})
+}
+func teacherLeaveReview(c *gin.Context) {
+	tid := c.GetUint64(teacherTenantKey)
+	teacher := c.GetUint64(teacherIDKey)
+	var in struct {
+		ID     uint64 `json:"id"`
+		Action string `json:"action"`
+		Note   string `json:"note"`
+	}
+	if c.ShouldBindJSON(&in) != nil || in.ID == 0 || (in.Action != "approved" && in.Action != "rejected") {
+		teacherPortalFail(c, 400, "参数不合法")
+		return
+	}
+	in.Note = strings.TrimSpace(in.Note)
+	if len(in.Note) > 1000 || (in.Action == "rejected" && in.Note == "") {
+		teacherPortalFail(c, 400, "驳回必须填写原因，备注不超过1000字节")
+		return
+	}
+	// A single conditional update ensures that only assigned advisors can review pending requests.
+	tx := global.GVA_DB.Exec(`UPDATE uni_leave_requests l SET l.status=?,l.review_note=?,l.reviewed_at=NOW(3),l.updated_at=NOW(3),l.reviewer_id=NULL
+ WHERE l.id=? AND l.tenant_id=? AND l.status='pending' AND EXISTS (
+ SELECT 1 FROM uni_students s JOIN uni_class_advisors a ON a.tenant_id=s.tenant_id AND a.class_id=s.class_id
+ WHERE s.tenant_id=l.tenant_id AND s.id=l.student_id AND a.teacher_id=?)`, in.Action, in.Note, in.ID, tid, teacher)
+	if tx.Error != nil {
+		teacherPortalFail(c, 500, "审批失败")
+		return
+	}
+	if tx.RowsAffected != 1 {
+		teacherPortalFail(c, 409, "申请不存在、已审批或不属于你的班级")
+		return
+	}
+	teacherPortalOK(c, gin.H{"id": in.ID, "status": in.Action})
+}
+func teacherAccountList(c *gin.Context) {
+	tid, ok := middleware.GetTenantID(c)
+	if !ok {
+		teacherPortalFail(c, 403, "缺少高校身份")
+		return
+	}
+	var rows []struct {
+		TeacherID   uint64     `json:"teacherId"`
+		TeacherNo   string     `json:"teacherNo"`
+		Name        string     `json:"name"`
+		Status      int        `json:"status"`
+		LastLoginAt *time.Time `json:"lastLoginAt"`
+	}
+	err := global.GVA_DB.Table("uni_teacher_accounts a").Select("a.teacher_id,t.teacher_no,t.name,a.status,a.last_login_at").Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").Where("a.tenant_id=?", tid).Order("a.id DESC").Scan(&rows).Error
+	if err != nil {
+		teacherPortalFail(c, 500, "查询失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"list": rows})
+}
+func teacherAccountPassword(c *gin.Context, reset bool) {
+	tid, ok := middleware.GetTenantID(c)
+	if !ok {
+		teacherPortalFail(c, 403, "缺少高校身份")
+		return
+	}
+	var in struct {
+		TeacherID uint64 `json:"teacherId"`
+		Password  string `json:"password"`
+	}
+	if c.ShouldBindJSON(&in) != nil || in.TeacherID == 0 || !studentPasswordValid(in.Password) {
+		teacherPortalFail(c, 400, "教师ID或密码不合法（12-72字节）")
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	if err != nil {
+		teacherPortalFail(c, 500, "密码处理失败")
+		return
+	}
+	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		var count int64
+		if e := tx.Table("uni_teachers").Where("tenant_id=? AND id=? AND status=1", tid, in.TeacherID).Count(&count).Error; e != nil {
+			return e
+		}
+		if count != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		if reset {
+			r := tx.Table("uni_teacher_accounts").Where("tenant_id=? AND teacher_id=?", tid, in.TeacherID).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now()})
+			if r.Error != nil {
+				return r.Error
+			}
+			if r.RowsAffected != 1 {
+				return gorm.ErrRecordNotFound
+			}
+			return tx.Exec("UPDATE uni_teacher_sessions s JOIN uni_teacher_accounts a ON a.tenant_id=s.tenant_id AND a.id=s.account_id SET s.revoked_at=NOW(3) WHERE a.tenant_id=? AND a.teacher_id=? AND s.revoked_at IS NULL", tid, in.TeacherID).Error
+		}
+		return tx.Table("uni_teacher_accounts").Create(map[string]interface{}{"tenant_id": tid, "teacher_id": in.TeacherID, "password_hash": string(hash), "status": 1}).Error
+	})
+	if err != nil {
+		teacherPortalFail(c, 409, "操作失败：教师不存在、已停用或账号状态不符合要求")
+		return
+	}
+	teacherPortalOK(c, gin.H{"success": true})
+}
+func teacherAccountStatus(c *gin.Context) {
+	tid, ok := middleware.GetTenantID(c)
+	if !ok {
+		teacherPortalFail(c, 403, "缺少高校身份")
+		return
+	}
+	var in struct {
+		TeacherID uint64 `json:"teacherId"`
+		Status    int    `json:"status"`
+	}
+	if c.ShouldBindJSON(&in) != nil || in.TeacherID == 0 || (in.Status != 1 && in.Status != 2) {
+		teacherPortalFail(c, 400, "参数不合法")
+		return
+	}
+	err := global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		r := tx.Table("uni_teacher_accounts").Where("tenant_id=? AND teacher_id=?", tid, in.TeacherID).Update("status", in.Status)
+		if r.Error != nil {
+			return r.Error
+		}
+		if r.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		if in.Status == 2 {
+			return tx.Exec("UPDATE uni_teacher_sessions s JOIN uni_teacher_accounts a ON a.tenant_id=s.tenant_id AND a.id=s.account_id SET s.revoked_at=NOW(3) WHERE a.tenant_id=? AND a.teacher_id=? AND s.revoked_at IS NULL", tid, in.TeacherID).Error
+		}
+		return nil
+	})
+	if err != nil {
+		teacherPortalFail(c, 404, "账号不存在")
+		return
+	}
+	teacherPortalOK(c, gin.H{"success": true})
+}
+func classAdvisorList(c *gin.Context) {
+	tid, ok := middleware.GetTenantID(c)
+	if !ok {
+		teacherPortalFail(c, 403, "缺少高校身份")
+		return
+	}
+	var rows []struct {
+		ClassID     uint64 `json:"classId"`
+		TeacherID   uint64 `json:"teacherId"`
+		ClassName   string `json:"className"`
+		TeacherName string `json:"teacherName"`
+	}
+	err := global.GVA_DB.Table("uni_class_advisors a").Select("a.class_id,a.teacher_id,c.name class_name,t.name teacher_name").Joins("JOIN uni_classes c ON c.tenant_id=a.tenant_id AND c.id=a.class_id").Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").Where("a.tenant_id=?", tid).Order("a.class_id").Scan(&rows).Error
+	if err != nil {
+		teacherPortalFail(c, 500, "查询失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"list": rows})
+}
+func classAdvisorSet(c *gin.Context) {
+	tid, ok := middleware.GetTenantID(c)
+	if !ok {
+		teacherPortalFail(c, 403, "缺少高校身份")
+		return
+	}
+	var in struct {
+		ClassID   uint64 `json:"classId"`
+		TeacherID uint64 `json:"teacherId"`
+	}
+	if c.ShouldBindJSON(&in) != nil || in.ClassID == 0 {
+		teacherPortalFail(c, 400, "班级ID不合法")
+		return
+	}
+	var count int64
+	if err := global.GVA_DB.Table("uni_classes").Where("tenant_id=? AND id=?", tid, in.ClassID).Count(&count).Error; err != nil || count != 1 {
+		teacherPortalFail(c, 400, "班级不存在")
+		return
+	}
+	if in.TeacherID == 0 {
+		if err := global.GVA_DB.Table("uni_class_advisors").Where("tenant_id=? AND class_id=?", tid, in.ClassID).Delete(&struct{ ID uint64 }{}).Error; err != nil {
+			teacherPortalFail(c, 500, "取消分配失败")
+			return
+		}
+		teacherPortalOK(c, gin.H{"success": true})
+		return
+	}
+	if err := global.GVA_DB.Table("uni_teachers").Where("tenant_id=? AND id=? AND status=1", tid, in.TeacherID).Count(&count).Error; err != nil || count != 1 {
+		teacherPortalFail(c, 400, "教师不存在或已停用")
+		return
+	}
+	// One class has at most one advisor. The assignment can be changed by an administrator.
+	err := global.GVA_DB.Exec("INSERT INTO uni_class_advisors(tenant_id,class_id,teacher_id) VALUES(?,?,?) ON DUPLICATE KEY UPDATE teacher_id=VALUES(teacher_id)", tid, in.ClassID, in.TeacherID).Error
+	if err != nil {
+		teacherPortalFail(c, 500, "分配失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"success": true})
+}
+func InitTeacherAccountRouter(privateGroup *gin.RouterGroup) {
+	g := privateGroup.Group("uni").Use(middleware.TenantAuth())
+	g.GET("/teacher-accounts", teacherAccountList)
+	g.POST("/teacher-accounts", func(c *gin.Context) { teacherAccountPassword(c, false) })
+	g.POST("/teacher-accounts/reset-password", func(c *gin.Context) { teacherAccountPassword(c, true) })
+	g.PUT("/teacher-accounts/status", teacherAccountStatus)
+	g.GET("/class-advisors", classAdvisorList)
+	g.PUT("/class-advisors", classAdvisorSet)
+}
+func InitTeacherPortalRouter(publicGroup *gin.RouterGroup) {
+	g := publicGroup.Group("uni/teacher-portal")
+	g.POST("/login", teacherPortalLogin)
+	protected := g.Group("").Use(teacherPortalAuth())
+	protected.GET("/me", teacherPortalMe)
+	protected.POST("/change-password", teacherPortalChangePassword)
+	protected.POST("/logout", teacherPortalLogout)
+	protected.GET("/classes", teacherAssignedClasses)
+	protected.GET("/leaves", teacherLeaveList)
+	protected.POST("/leaves/review", teacherLeaveReview)
+}
