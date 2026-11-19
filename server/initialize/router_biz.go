@@ -23,4 +23,10 @@ func initBizRouter(routers ...*gin.RouterGroup) {
 	universityRouter.InitOrganizationRouter(privateGroup)
 	universityRouter.InitStudentRouter(privateGroup)
 	universityRouter.InitLeaveRouter(privateGroup)
+	// V13：高校管理员管理学生登录账号，需要管理员 JWT
+	universityRouter.InitStudentAccountRouter(privateGroup)
+
+	// V13：学生登录与学生个人中心，使用独立学生认证
+	universityRouter.InitStudentPortalRouter(publicGroup)
+    universityRouter.InitStudentLeaveRouter(publicGroup)
 }
