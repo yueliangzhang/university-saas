@@ -35,3 +35,53 @@ const save=async()=>{if(password.value.length<12){ElMessage.warning('密码至�
 const toggle=async row=>{try{await ElMessageBox.confirm(`确定${row.status===1?'停用':'启用'}该账号？`,'确认');const r=await api('/uni/student-accounts/status','put',{studentId:row.studentId,status:row.status===1?2:1});if(r?.code!==0)throw Error(r?.msg||'操作失败');await load()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'操作失败')}}
 onMounted(load)
 </script>
+
+<style scoped>
+
+/* UNIVERSITY_ADMIN_V17_4_BEGIN */
+/* Only applies to this Vue SFC; no global html/body or overflow changes. */
+:deep(.el-card) {
+  border: 1px solid #e7edf5;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(24, 49, 86, .045);
+  background: #fff;
+}
+:deep(.el-card__header) {
+  padding: 18px 22px;
+  border-bottom: 1px solid #edf1f7;
+  font-weight: 650;
+  color: #1d2b43;
+}
+:deep(.el-card__body) { padding: 22px; }
+:deep(.el-button) { border-radius: 9px; font-weight: 550; }
+:deep(.el-button--primary) { --el-button-bg-color: #2563eb; --el-button-border-color: #2563eb; --el-button-hover-bg-color: #1d4ed8; --el-button-hover-border-color: #1d4ed8; }
+:deep(.el-input__wrapper),
+:deep(.el-select__wrapper),
+:deep(.el-textarea__inner) {
+  border-radius: 9px;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
+}
+:deep(.el-input__wrapper.is-focus),
+:deep(.el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px #2563eb inset; }
+:deep(.el-table) {
+  --el-table-header-bg-color: #f8fafd;
+  --el-table-border-color: #edf1f7;
+  --el-table-row-hover-bg-color: #f5f8ff;
+  border-radius: 12px;
+  font-size: 13px;
+}
+:deep(.el-table th.el-table__cell) { color: #53647d; font-weight: 650; }
+:deep(.el-table td.el-table__cell) { color: #27374f; }
+:deep(.el-tag) { border-radius: 7px; font-weight: 550; }
+:deep(.el-pagination) { margin-top: 16px; }
+:deep(.el-dialog) { border-radius: 18px; max-width: calc(100vw - 28px); }
+:deep(.el-dialog__header) { padding-bottom: 16px; border-bottom: 1px solid #edf1f7; }
+:deep(.el-form-item__label) { color: #40516a; font-weight: 550; }
+@media (max-width: 768px) {
+  :deep(.el-card__body) { padding: 14px; }
+  :deep(.el-card__header) { padding: 14px; }
+  :deep(.el-dialog) { width: calc(100vw - 24px) !important; margin: 5vh auto; }
+  :deep(.el-pagination) { flex-wrap: wrap; justify-content: center; row-gap: 8px; }
+}
+/* UNIVERSITY_ADMIN_V17_4_END */
+</style>

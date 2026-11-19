@@ -57,3 +57,53 @@ onMounted(async()=>{await loadColleges();await load()})
 </script>
 <style scoped>.teacher-page{padding:20px;display:grid;gap:18px}.hero{background:linear-gradient(115deg,#eff6ff,#fff)}.hero-inner{display:flex;justify-content:space-between;align-items:center;gap:12px}.hero h2{margin:0;font-size:23px}.hero p{margin:8px 0 0;color:#64748b}.pager{display:flex;justify-content:flex-end;margin-top:18px}@media(max-width:600px){.teacher-page{padding:10px}.hero-inner{align-items:flex-start;flex-direction:column}.pager{overflow-x:auto}}
 </style>
+
+<style scoped>
+
+/* UNIVERSITY_ADMIN_V17_4_BEGIN */
+/* Only applies to this Vue SFC; no global html/body or overflow changes. */
+:deep(.el-card) {
+  border: 1px solid #e7edf5;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(24, 49, 86, .045);
+  background: #fff;
+}
+:deep(.el-card__header) {
+  padding: 18px 22px;
+  border-bottom: 1px solid #edf1f7;
+  font-weight: 650;
+  color: #1d2b43;
+}
+:deep(.el-card__body) { padding: 22px; }
+:deep(.el-button) { border-radius: 9px; font-weight: 550; }
+:deep(.el-button--primary) { --el-button-bg-color: #2563eb; --el-button-border-color: #2563eb; --el-button-hover-bg-color: #1d4ed8; --el-button-hover-border-color: #1d4ed8; }
+:deep(.el-input__wrapper),
+:deep(.el-select__wrapper),
+:deep(.el-textarea__inner) {
+  border-radius: 9px;
+  box-shadow: 0 0 0 1px #e2e8f0 inset;
+}
+:deep(.el-input__wrapper.is-focus),
+:deep(.el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px #2563eb inset; }
+:deep(.el-table) {
+  --el-table-header-bg-color: #f8fafd;
+  --el-table-border-color: #edf1f7;
+  --el-table-row-hover-bg-color: #f5f8ff;
+  border-radius: 12px;
+  font-size: 13px;
+}
+:deep(.el-table th.el-table__cell) { color: #53647d; font-weight: 650; }
+:deep(.el-table td.el-table__cell) { color: #27374f; }
+:deep(.el-tag) { border-radius: 7px; font-weight: 550; }
+:deep(.el-pagination) { margin-top: 16px; }
+:deep(.el-dialog) { border-radius: 18px; max-width: calc(100vw - 28px); }
+:deep(.el-dialog__header) { padding-bottom: 16px; border-bottom: 1px solid #edf1f7; }
+:deep(.el-form-item__label) { color: #40516a; font-weight: 550; }
+@media (max-width: 768px) {
+  :deep(.el-card__body) { padding: 14px; }
+  :deep(.el-card__header) { padding: 14px; }
+  :deep(.el-dialog) { width: calc(100vw - 24px) !important; margin: 5vh auto; }
+  :deep(.el-pagination) { flex-wrap: wrap; justify-content: center; row-gap: 8px; }
+}
+/* UNIVERSITY_ADMIN_V17_4_END */
+</style>
