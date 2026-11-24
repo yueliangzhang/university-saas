@@ -155,6 +155,15 @@ func teacherDelete(c *gin.Context) {
 		teacherError(c, 400, "教师ID不合法")
 		return
 	}
+	var n int64
+	if err := global.GVA_DB.Table("uni_students").Where("tenant_id=? AND advisor_id=?", tid, id).Count(&n).Error; err != nil {
+		teacherError(c, 500, "校验关联学生失败")
+		return
+	}
+	if n > 0 {
+		teacherError(c, 409, "请先解除或转移该教师负责的学生")
+		return
+	}
 	tx := global.GVA_DB.Where("tenant_id=? AND id=?", tid, id).Delete(&uniTeacher{})
 	if tx.Error != nil {
 		teacherError(c, 409, "删除失败：教师可能已被业务引用")

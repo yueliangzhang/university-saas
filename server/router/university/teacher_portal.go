@@ -170,11 +170,55 @@ func teacherAssignedClasses(c *gin.Context) {
 		Name string `json:"name"`
 		Code string `json:"code"`
 	}
-	if err := global.GVA_DB.Table("uni_class_advisors a").Select("cl.id,cl.name,cl.code").Joins("JOIN uni_classes cl ON cl.tenant_id=a.tenant_id AND cl.id=a.class_id").Where("a.tenant_id=? AND a.teacher_id=?", tid, teacher).Order("cl.id").Scan(&rows).Error; err != nil {
+	if err := global.GVA_DB.Table("uni_students s").Select("DISTINCT cl.id,cl.name,cl.code").Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").Where("s.tenant_id=? AND s.advisor_id=?", tid, teacher).Order("cl.id").Scan(&rows).Error; err != nil {
 		teacherPortalFail(c, 500, "查询班级失败")
 		return
 	}
 	teacherPortalOK(c, gin.H{"list": rows})
+}
+func teacherAssignedStudents(c *gin.Context) {
+	tid, teacher := c.GetUint64(teacherTenantKey), c.GetUint64(teacherIDKey)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	if page > 1000000 {
+		page = 1000000
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("pageSize", "20"))
+	if size < 1 {
+		size = 20
+	}
+	if size > 100 {
+		size = 100
+	}
+	q := global.GVA_DB.Table("uni_students s").Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").Where("s.tenant_id=? AND s.advisor_id=?", tid, teacher)
+	if raw := c.Query("classId"); raw != "" {
+		id, e := strconv.ParseUint(raw, 10, 64)
+		if e != nil || id == 0 {
+			teacherPortalFail(c, 400, "班级ID不合法")
+			return
+		}
+		q = q.Where("s.class_id=?", id)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		teacherPortalFail(c, 500, "查询失败")
+		return
+	}
+	var rows []struct {
+		ID        uint64 `json:"id"`
+		StudentNo string `json:"studentNo"`
+		Name      string `json:"name"`
+		ClassID   uint64 `json:"classId"`
+		ClassName string `json:"className"`
+		Status    int    `json:"status"`
+	}
+	if err := q.Select("s.id,s.student_no,s.name,s.class_id,cl.name class_name,s.status").Order("s.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
+		teacherPortalFail(c, 500, "查询失败")
+		return
+	}
+	teacherPortalOK(c, gin.H{"list": rows, "total": total, "page": page, "pageSize": size})
 }
 func teacherLeaveList(c *gin.Context) {
 	tid := c.GetUint64(teacherTenantKey)
@@ -193,7 +237,32 @@ func teacherLeaveList(c *gin.Context) {
 	if size > 100 {
 		size = 100
 	}
-	q := global.GVA_DB.Table("uni_leave_requests l").Joins("JOIN uni_students s ON s.tenant_id=l.tenant_id AND s.id=l.student_id").Joins("JOIN uni_class_advisors a ON a.tenant_id=s.tenant_id AND a.class_id=s.class_id AND a.teacher_id=?", teacher).Where("l.tenant_id=?", tid)
+	q := global.GVA_DB.Table("uni_leave_requests l").
+		Joins("JOIN uni_students s ON s.tenant_id=l.tenant_id AND s.id=l.student_id").
+		Where("s.advisor_id=?", teacher).
+		Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").
+		Where("l.tenant_id=?", tid)
+	// Class filter is enforced in the database after the teacher/advisor join.
+	// A teacher cannot query another class by guessing its ID.
+	if raw := strings.TrimSpace(c.Query("classId")); raw != "" {
+		classID, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil || classID == 0 {
+			teacherPortalFail(c, 400, "班级ID不合法")
+			return
+		}
+		var assigned int64
+		if err := global.GVA_DB.Table("uni_students").
+			Where("tenant_id=? AND advisor_id=? AND class_id=?", tid, teacher, classID).
+			Count(&assigned).Error; err != nil {
+			teacherPortalFail(c, 500, "班级权限校验失败")
+			return
+		}
+		if assigned == 0 {
+			teacherPortalFail(c, 403, "无权查看该班级的请假记录")
+			return
+		}
+		q = q.Where("s.class_id=?", classID)
+	}
 	if status := c.Query("status"); status != "" {
 		if !leaveStatusValid(status) {
 			teacherPortalFail(c, 400, "状态不合法")
@@ -211,6 +280,8 @@ func teacherLeaveList(c *gin.Context) {
 		StudentID   uint64    `json:"studentId"`
 		StudentName string    `json:"studentName"`
 		StudentNo   string    `json:"studentNo"`
+		ClassID     uint64    `json:"classId"`
+		ClassName   string    `json:"className"`
 		LeaveType   string    `json:"leaveType"`
 		Reason      string    `json:"reason"`
 		StartAt     time.Time `json:"startAt"`
@@ -218,7 +289,7 @@ func teacherLeaveList(c *gin.Context) {
 		Status      string    `json:"status"`
 		ReviewNote  string    `json:"reviewNote"`
 	}
-	if err := q.Select("l.id,l.student_id,s.name student_name,s.student_no,l.leave_type,l.reason,l.start_at,l.end_at,l.status,l.review_note").Order("l.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
+	if err := q.Select("l.id,l.student_id,s.name student_name,s.student_no,s.class_id,cl.name class_name,l.leave_type,l.reason,l.start_at,l.end_at,l.status,l.review_note").Order("l.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		teacherPortalFail(c, 500, "查询失败")
 		return
 	}
@@ -244,14 +315,14 @@ func teacherLeaveReview(c *gin.Context) {
 	// A single conditional update ensures that only assigned advisors can review pending requests.
 	tx := global.GVA_DB.Exec(`UPDATE uni_leave_requests l SET l.status=?,l.review_note=?,l.reviewed_at=NOW(3),l.updated_at=NOW(3),l.reviewer_id=NULL
  WHERE l.id=? AND l.tenant_id=? AND l.status='pending' AND EXISTS (
- SELECT 1 FROM uni_students s JOIN uni_class_advisors a ON a.tenant_id=s.tenant_id AND a.class_id=s.class_id
- WHERE s.tenant_id=l.tenant_id AND s.id=l.student_id AND a.teacher_id=?)`, in.Action, in.Note, in.ID, tid, teacher)
+ SELECT 1 FROM uni_students s
+ WHERE s.tenant_id=l.tenant_id AND s.id=l.student_id AND s.advisor_id=?)`, in.Action, in.Note, in.ID, tid, teacher)
 	if tx.Error != nil {
 		teacherPortalFail(c, 500, "审批失败")
 		return
 	}
 	if tx.RowsAffected != 1 {
-		teacherPortalFail(c, 409, "申请不存在、已审批或不属于你的班级")
+		teacherPortalFail(c, 409, "申请不存在、已审批或不属于你负责的学生")
 		return
 	}
 	teacherPortalOK(c, gin.H{"id": in.ID, "status": in.Action})
@@ -429,6 +500,7 @@ func InitTeacherPortalRouter(publicGroup *gin.RouterGroup) {
 	protected.POST("/change-password", teacherPortalChangePassword)
 	protected.POST("/logout", teacherPortalLogout)
 	protected.GET("/classes", teacherAssignedClasses)
+	protected.GET("/students", teacherAssignedStudents)
 	protected.GET("/leaves", teacherLeaveList)
 	protected.POST("/leaves/review", teacherLeaveReview)
 }

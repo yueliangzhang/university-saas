@@ -90,12 +90,12 @@
 
             <template v-else-if="activeTab==='profile'">
               <div class="page-heading"><div><h1>个人中心</h1><p>查看你的在校基本信息</p></div></div>
-              <div class="section-card profile-card"><div class="profile-banner"><el-avatar :size="66">{{ (me?.name||'学').slice(0,1) }}</el-avatar><div><h2>{{me?.name||'学生'}}</h2><p>学号 {{me?.studentNo||'—'}}</p></div></div><el-descriptions :column="profileColumns" border class="profile-details"><el-descriptions-item label="姓名">{{me?.name||'—'}}</el-descriptions-item><el-descriptions-item label="学号">{{me?.studentNo||'—'}}</el-descriptions-item><el-descriptions-item label="班级 ID">{{me?.classId??'—'}}</el-descriptions-item><el-descriptions-item label="入学年份">{{me?.enrollmentYear||'—'}}</el-descriptions-item></el-descriptions><p class="muted profile-hint">如需修改学籍信息，请联系学校管理员。</p></div>
+              <div class="section-card profile-card"><div class="profile-banner"><el-avatar :size="66">{{ (me?.name||'学').slice(0,1) }}</el-avatar><div><h2>{{me?.name||'学生'}}</h2><p>学号 {{me?.studentNo||'—'}}</p></div></div><el-descriptions :column="profileColumns" border class="profile-details"><el-descriptions-item label="姓名">{{me?.name||'—'}}</el-descriptions-item><el-descriptions-item label="学号">{{me?.studentNo||'—'}}</el-descriptions-item><el-descriptions-item label="班级 ID">{{me?.classId??'—'}}</el-descriptions-item><el-descriptions-item label="所属辅导员">{{me?.advisorName||'暂未分配'}}</el-descriptions-item><el-descriptions-item label="入学年份">{{me?.enrollmentYear||'—'}}</el-descriptions-item></el-descriptions><p class="muted profile-hint">如需修改学籍信息，请联系学校管理员。</p></div>
             </template>
 
             <template v-else>
               <div class="page-heading"><div><h1>账号安全</h1><p>管理登录密码，保护你的学生账号</p></div></div>
-              <div class="section-card security-card"><div class="security-heading"><span class="security-icon"><el-icon :size="23"><Lock /></el-icon></span><div><h2>修改登录密码</h2><p>建议使用至少 12 位的强密码，并避免与其他网站重复。</p></div></div><el-form label-position="top" class="password-form" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password" show-password autocomplete="current-password" placeholder="请输入当前密码" /></el-form-item><el-form-item label="新密码"><el-input v-model="newPassword" type="password" show-password autocomplete="new-password" placeholder="至少 12 位，最多 72 字节" /></el-form-item><el-button type="primary" native-type="submit" :loading="passwordSaving">保存新密码</el-button></el-form><el-alert class="password-tip" title="密码修改成功后，当前会话将自动退出，请使用新密码重新登录。" type="info" :closable="false" show-icon /></div>
+              <div class="section-card security-card"><div class="security-heading"><span class="security-icon"><el-icon :size="23"><Lock /></el-icon></span><div><h2>修改登录密码</h2><p>建议使用至少 12 位的强密码，并避免与其他网站重复。</p></div></div><el-form label-position="top" class="password-form" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password" show-password autocomplete="current-password" placeholder="请输入当前密码" /></el-form-item><el-form-item label="新密码"><el-input v-model="newPassword" type="password" show-password autocomplete="new-password" placeholder="至少 12 位，最多 72 字节" /></el-form-item><el-button type="primary" native-type="submit" :loading="passwordSaving" :disabled="passwordSaving">保存新密码</el-button></el-form><el-alert class="password-tip" title="密码修改成功后，当前会话将自动退出，请使用新密码重新登录。" type="info" :closable="false" show-icon /></div>
             </template>
           </el-main>
         </el-container>
@@ -111,7 +111,7 @@
           <el-form-item label="结束时间" required><el-date-picker v-model="leaveForm.endAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择结束时间"/></el-form-item>
           <el-form-item label="请假原因" required><el-input v-model="leaveForm.reason" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="请简要说明请假原因"/></el-form-item>
         </el-form>
-        <template #footer><el-button @click="leaveDialog=false">取消</el-button><el-button type="primary" :loading="leaveSaving" @click="submitLeave">提交申请</el-button></template>
+        <template #footer><el-button @click="leaveDialog=false">取消</el-button><el-button type="primary" :loading="leaveSaving" :disabled="leaveSaving" @click="submitLeave">提交申请</el-button></template>
       </el-dialog>
     </template>
   </div>
@@ -165,6 +165,7 @@ const loadMe = async () => {
   catch (e) { clear(); ElMessage.error(leaveError(e)) }
 }
 const login = async () => {
+  if (loading.value) return
   if (!form.value.tenantId || !form.value.studentNo.trim() || !form.value.password) { ElMessage.warning('请填写高校 ID、学号和密码'); return }
   loading.value = true
   try {
@@ -183,6 +184,7 @@ const logout = async () => {
   finally { clear() }
 }
 const changePassword = async () => {
+  if (passwordSaving.value) return
   if (!oldPassword.value || new TextEncoder().encode(newPassword.value).length < 12 || new TextEncoder().encode(newPassword.value).length > 72) {
     ElMessage.warning('请输入当前密码，新密码长度应为 12–72 字节'); return
   }
@@ -227,6 +229,7 @@ const loadLeaves = async () => {
 const refreshLeaves = () => { loadLeaves() }
 const openLeaveDialog = () => { leaveForm.value = { leaveType: 'personal', reason: '', startAt: '', endAt: '' }; leaveDialog.value = true }
 const submitLeave = async () => {
+  if (leaveSaving.value) return
   const f = leaveForm.value
   if (!f.reason?.trim() || !f.startAt || !f.endAt || f.endAt <= f.startAt) { ElMessage.warning('请填写完整信息，结束时间必须晚于开始时间'); return }
   leaveSaving.value = true
@@ -317,4 +320,23 @@ html, body {
  .student-portal.uni-ui .pagination { overflow-x:auto; }
 }
 @media(prefers-reduced-motion:reduce) { .student-portal.uni-ui .nav-item,.student-portal.uni-ui .stat-card { transition:none; transform:none; } }
+</style>
+
+<style scoped>
+/* V17.7.2: mobile usability without changing student portal scroll rules */
+.student-portal.uni-ui .main-container { min-width: 0; }
+.student-portal.uni-ui .content { min-width: 0; }
+.student-portal.uni-ui .section-card { min-width: 0; }
+.student-portal.uni-ui .section-card :deep(.el-table) { max-width: 100%; }
+.student-portal.uni-ui .filter-actions { flex-wrap: wrap; }
+.student-portal.uni-ui .password-form :deep(.el-input) { max-width: 100%; }
+@media (max-width: 760px) {
+  .student-portal.uni-ui .page-heading,
+  .student-portal.uni-ui .section-header { flex-wrap: wrap; }
+  .student-portal.uni-ui .filter-actions { gap: 8px; }
+  .student-portal.uni-ui .welcome-card { min-width: 0; }
+  .student-portal.uni-ui .stat-card { min-width: 0; }
+  .student-portal.uni-ui .stat-value { overflow-wrap: anywhere; }
+  .student-portal.uni-ui .pagination { justify-content: center; }
+}
 </style>

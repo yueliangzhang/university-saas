@@ -27,6 +27,7 @@
             <el-option v-for="x in classes" :key="x.id" :label="x.name" :value="x.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="辅导员"><el-select v-model="filterAdvisor" clearable filterable placeholder="全部辅导员" style="width:190px" @change="search"><el-option label="未分配" :value="0"/><el-option v-for="t in teachers" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id"/></el-select></el-form-item>
         <el-form-item class="uni-student-filter-actions">
           <el-button type="primary" @click="search">查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -47,6 +48,7 @@
           <el-table-column label="所属班级" min-width="180" show-overflow-tooltip>
             <template #default="{row}">{{ className(row.classId) }}</template>
           </el-table-column>
+          <el-table-column label="所属辅导员" min-width="135"><template #default="{row}">{{row.advisorName || '未分配'}}</template></el-table-column>
           <el-table-column prop="enrollmentYear" label="入学年份" width="110" />
           <el-table-column prop="phone" label="联系电话" min-width="140" show-overflow-tooltip>
             <template #default="{row}">{{ row.phone || '—' }}</template>
@@ -76,6 +78,7 @@
         <el-form-item label="姓名" required><el-input v-model="form.name" maxlength="191" /></el-form-item>
         <el-form-item label="性别"><el-select v-model="form.gender" style="width:100%"><el-option label="未填写" :value="0" /><el-option label="男" :value="1" /><el-option label="女" :value="2" /></el-select></el-form-item>
         <el-form-item label="班级" required><el-select v-model="form.classId" filterable placeholder="选择班级" style="width:100%"><el-option v-for="x in activeClasses" :key="x.id" :label="x.name" :value="x.id" /></el-select></el-form-item>
+        <el-form-item label="辅导员"><el-select v-model="advisorChoice" filterable style="width:100%"><el-option v-if="!editing" label="按班级自动分配" value="auto"/><el-option label="暂不分配" value="none"/><el-option v-for="t in teachers" :key="t.id" :label="`${t.name}（${t.teacherNo}）${t.status!==1?' · 已停用':''}`" :value="t.id" :disabled="t.status!==1"/></el-select></el-form-item>
         <el-form-item label="入学年份" required><el-input-number v-model="form.enrollmentYear" :min="1900" :max="2200" /></el-form-item>
         <el-form-item label="电话"><el-input v-model="form.phone" maxlength="32" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" maxlength="191" /></el-form-item>
@@ -92,21 +95,23 @@ import StudentAccountPanel from './studentAccountPanel.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 const activeTab=ref('profile')
+const teachers=ref([]),filterAdvisor=ref(null),advisorChoice=ref('auto')
+const loadTeachers=async()=>{try{const all=[];for(let p=1;;p++){const r=await request({url:'/uni/teachers',method:'get',params:{page:p,pageSize:100}});if(r?.code!==0)throw Error(r?.msg||'教师加载失败');const chunk=r.data?.list||[];all.push(...chunk);if(!chunk.length||all.length>=r.data.total)break}teachers.value=all}catch(e){ElMessage.error(e.message)}}
 const rows=ref([]),classes=ref([]),majors=ref([]),colleges=ref([])
 const keyword=ref(''),filterClass=ref(null),page=ref(1),pageSize=ref(20),total=ref(0)
 const loading=ref(false),saving=ref(false),dialog=ref(false),editing=ref(false),form=ref({})
 const activeClasses=computed(()=>classes.value.filter(x=>x.status===1 && majors.value.some(m=>m.id===x.majorId && m.status===1 && colleges.value.some(c=>c.id===m.collegeId && c.status===1))))
 const className=id=>classes.value.find(x=>x.id===id)?.name||`班级 #${id}`
 const api=(method='get',data,params)=>request({url:'/uni/students',method,data,params})
-const load=async()=>{loading.value=true;try{const r=await api('get',undefined,{page:page.value,pageSize:pageSize.value,keyword:keyword.value,classId:filterClass.value||undefined});if(r?.code!==0)throw Error(r?.msg||'加载失败');rows.value=r.data?.list||[];total.value=r.data?.total||0}catch(e){ElMessage.error(e.message)}finally{loading.value=false}}
+const load=async()=>{loading.value=true;try{const r=await api('get',undefined,{page:page.value,pageSize:pageSize.value,keyword:keyword.value,classId:filterClass.value||undefined,advisorId:filterAdvisor.value ?? undefined});if(r?.code!==0)throw Error(r?.msg||'加载失败');rows.value=r.data?.list||[];total.value=r.data?.total||0}catch(e){ElMessage.error(e.message)}finally{loading.value=false}}
 const loadOptions=async()=>{try{for(const [kind,target] of [['colleges',colleges],['majors',majors],['classes',classes]]){const r=await request({url:`/uni/org/${kind}`,method:'get'});if(r?.code!==0)throw Error(r?.msg||'组织架构加载失败');target.value=r.data?.list||[]}}catch(e){ElMessage.error(e.message)}}
 const search=()=>{page.value=1;load()}
-const reset=()=>{keyword.value='';filterClass.value=null;search()}
-const openCreate=()=>{editing.value=false;form.value={studentNo:'',name:'',gender:0,classId:null,enrollmentYear:new Date().getFullYear(),phone:'',email:'',status:1};dialog.value=true}
-const openEdit=row=>{editing.value=true;form.value={...row};dialog.value=true}
-const save=async()=>{if(!form.value.studentNo?.trim()||!form.value.name?.trim()||!form.value.classId){ElMessage.warning('请填写学号、姓名并选择班级');return}saving.value=true;try{const r=await api(editing.value?'put':'post',form.value);if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('保存成功');dialog.value=false;await load()}catch(e){ElMessage.error(e.message)}finally{saving.value=false}}
+const reset=()=>{keyword.value='';filterClass.value=null;filterAdvisor.value=null;search()}
+const openCreate=()=>{editing.value=false;advisorChoice.value='auto';loadTeachers();form.value={studentNo:'',name:'',gender:0,classId:null,enrollmentYear:new Date().getFullYear(),phone:'',email:'',status:1};dialog.value=true}
+const openEdit=row=>{editing.value=true;advisorChoice.value=row.advisorId ?? 'none';loadTeachers();form.value={...row};dialog.value=true}
+const save=async()=>{if(!form.value.studentNo?.trim()||!form.value.name?.trim()||!form.value.classId){ElMessage.warning('请填写学号、姓名并选择班级');return}saving.value=true;try{const payload={...form.value};delete payload.advisorId;if(advisorChoice.value!=='auto'&&(!editing.value||advisorChoice.value!==(form.value.advisorId??'none')))payload.advisorId=advisorChoice.value==='none'?null:advisorChoice.value;const r=await api(editing.value?'put':'post',payload);if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('保存成功');dialog.value=false;await load()}catch(e){ElMessage.error(e.message)}finally{saving.value=false}}
 const remove=async row=>{try{await ElMessageBox.confirm(`确定删除学生「${row.name}」？`,'删除确认',{type:'warning'});const r=await api('delete',undefined,{id:row.id});if(r?.code!==0)throw Error(r?.msg||'删除失败');ElMessage.success('删除成功');await load()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'删除失败')}}
-onMounted(async()=>{await loadOptions();await load()})
+onMounted(async()=>{await Promise.all([loadOptions(),loadTeachers()]);await load()})
 </script>
 <style scoped>
 .uni-student-tabs { display:flex; align-items:center; gap:5px; border-bottom:1px solid #e7edf5; margin:0 0 16px; padding:0 2px; overflow-x:auto; }

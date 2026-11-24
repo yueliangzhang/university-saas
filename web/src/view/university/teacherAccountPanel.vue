@@ -10,11 +10,11 @@
       </el-table>
     </div>
     <div v-else class="uni-panel-section">
-      <div class="uni-panel-heading"><div><h3>班级辅导员分配</h3><p>每个班级最多指定一名负责审批的辅导员</p></div><el-button @click="load">刷新</el-button></div>
+      <div class="uni-panel-heading"><div><h3>班级辅导员分配</h3><p>班级默认辅导员仅用于新增学生时自动分配；修改此处不会改变已有学生的辅导员或审批权限。</p></div><el-button @click="load">刷新</el-button></div>
       <el-table v-loading="loading" :data="classes" style="width:100%" empty-text="暂无班级">
         <el-table-column prop="name" label="班级" min-width="160" />
         <el-table-column prop="code" label="班级代码" min-width="130" />
-        <el-table-column label="负责教师" min-width="280"><template #default="{row}"><el-select :model-value="advisor(row.id)" clearable placeholder="未分配" style="width:min(260px,100%)" @change="v=>setAdvisor(row.id,v)"><el-option v-for="t in teachers.filter(x=>x.status===1)" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id" /></el-select></template></el-table-column>
+        <el-table-column label="默认辅导员" min-width="280"><template #default="{row}"><el-select :model-value="advisor(row.id)" clearable placeholder="未分配" style="width:min(260px,100%)" @change="v=>setAdvisor(row.id,v)"><el-option v-for="t in teachers.filter(x=>x.status===1)" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id" /></el-select></template></el-table-column>
       </el-table>
     </div>
     <el-dialog v-model="dialog" :title="reset?'重置教师密码':'开通教师账号'" width="min(450px,95vw)" append-to-body><p>{{selected?.name}}（{{selected?.teacherNo}}）</p><el-input v-model="password" type="password" show-password placeholder="设置至少12位的初始密码"/><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="savePassword">确认</el-button></template></el-dialog>

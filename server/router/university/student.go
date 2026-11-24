@@ -1,6 +1,7 @@
 package university
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,32 +13,51 @@ import (
 )
 
 type uniStudent struct {
-	ID             uint64 `json:"id" gorm:"primaryKey"`
-	TenantID       uint64 `json:"-"`
-	StudentNo      string `json:"studentNo"`
-	Name           string `json:"name"`
-	Gender         int    `json:"gender"`
-	Phone          string `json:"phone"`
-	Email          string `json:"email"`
-	ClassID        uint64 `json:"classId"`
-	EnrollmentYear int    `json:"enrollmentYear"`
-	Status         int    `json:"status"`
+	AdvisorName    string  `json:"advisorName" gorm:"->;column:advisor_name"`
+	ID             uint64  `json:"id" gorm:"primaryKey"`
+	TenantID       uint64  `json:"-"`
+	StudentNo      string  `json:"studentNo"`
+	Name           string  `json:"name"`
+	Gender         int     `json:"gender"`
+	Phone          string  `json:"phone"`
+	Email          string  `json:"email"`
+	ClassID        uint64  `json:"classId"`
+	AdvisorID      *uint64 `json:"advisorId"`
+	EnrollmentYear int     `json:"enrollmentYear"`
+	Status         int     `json:"status"`
 }
 
 func (uniStudent) TableName() string { return "uni_students" }
 
 type studentInput struct {
-	ID             uint64 `json:"id"`
-	StudentNo      string `json:"studentNo"`
-	Name           string `json:"name"`
-	Gender         int    `json:"gender"`
-	Phone          string `json:"phone"`
-	Email          string `json:"email"`
-	ClassID        uint64 `json:"classId"`
-	EnrollmentYear int    `json:"enrollmentYear"`
-	Status         int    `json:"status"`
+	AdvisorProvided bool    `json:"-"`
+	ID              uint64  `json:"id"`
+	StudentNo       string  `json:"studentNo"`
+	Name            string  `json:"name"`
+	Gender          int     `json:"gender"`
+	Phone           string  `json:"phone"`
+	Email           string  `json:"email"`
+	ClassID         uint64  `json:"classId"`
+	AdvisorID       *uint64 `json:"advisorId"`
+	EnrollmentYear  int     `json:"enrollmentYear"`
+	Status          int     `json:"status"`
 }
 
+// Preserve existing assignment when older clients omit advisorId; null explicitly clears it.
+func (in *studentInput) UnmarshalJSON(data []byte) error {
+	type plain studentInput
+	var v plain
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*in = studentInput(v)
+	_, in.AdvisorProvided = fields["advisorId"]
+	return nil
+}
 func studentError(c *gin.Context, status int, msg string) {
 	c.JSON(status, gin.H{"code": 7, "msg": msg})
 }
@@ -75,10 +95,10 @@ func studentList(c *gin.Context) {
 	if size > 100 {
 		size = 100
 	}
-	q := global.GVA_DB.Model(&uniStudent{}).Where("tenant_id=?", tid)
+	q := global.GVA_DB.Table("uni_students s").Joins("LEFT JOIN uni_teachers t ON t.tenant_id=s.tenant_id AND t.id=s.advisor_id").Where("s.tenant_id=?", tid)
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		like := "%" + keyword + "%"
-		q = q.Where("student_no LIKE ? OR name LIKE ?", like, like)
+		q = q.Where("s.student_no LIKE ? OR s.name LIKE ?", like, like)
 	}
 	if classStr := c.Query("classId"); classStr != "" {
 		classID, err := strconv.ParseUint(classStr, 10, 64)
@@ -86,7 +106,19 @@ func studentList(c *gin.Context) {
 			studentError(c, 400, "classId 不合法")
 			return
 		}
-		q = q.Where("class_id=?", classID)
+		q = q.Where("s.class_id=?", classID)
+	}
+	if raw := c.Query("advisorId"); raw != "" {
+		id, err := strconv.ParseUint(raw, 10, 64)
+		if err != nil {
+			studentError(c, 400, "辅导员ID不合法")
+			return
+		}
+		if id == 0 {
+			q = q.Where("s.advisor_id IS NULL")
+		} else {
+			q = q.Where("s.advisor_id=?", id)
+		}
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
@@ -94,7 +126,7 @@ func studentList(c *gin.Context) {
 		return
 	}
 	var rows []uniStudent
-	if err := q.Order("id DESC").Limit(size).Offset((page - 1) * size).Find(&rows).Error; err != nil {
+	if err := q.Select("s.*, COALESCE(t.name, '') AS advisor_name").Order("s.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		studentError(c, 500, "查询学生失败")
 		return
 	}
@@ -130,8 +162,39 @@ func studentWrite(update bool) gin.HandlerFunc {
 			studentError(c, 400, "班级不存在、已停用或不属于当前高校")
 			return
 		}
+		if !update && !in.AdvisorProvided {
+			var ids []uint64
+			if err := db.Table("uni_class_advisors a").Where("a.tenant_id=? AND a.class_id=?", tid, in.ClassID).Distinct("a.teacher_id").Pluck("a.teacher_id", &ids).Error; err != nil {
+				studentError(c, 500, "默认辅导员查询失败")
+				return
+			}
+			if len(ids) == 1 {
+				var n int64
+				if err := db.Table("uni_teachers").Where("tenant_id=? AND id=? AND status=1", tid, ids[0]).Count(&n).Error; err != nil {
+					studentError(c, 500, "辅导员校验失败")
+					return
+				}
+				if n == 1 {
+					in.AdvisorID = &ids[0]
+				}
+			}
+		}
+		if in.AdvisorID != nil {
+			var n int64
+			if err := db.Table("uni_teachers").Where("tenant_id=? AND id=? AND status=1", tid, *in.AdvisorID).Count(&n).Error; err != nil {
+				studentError(c, 500, "辅导员校验失败")
+				return
+			}
+			if n != 1 {
+				studentError(c, 400, "辅导员不存在、已停用或不属于当前高校")
+				return
+			}
+		}
 		if update {
 			fields := map[string]interface{}{"student_no": in.StudentNo, "name": in.Name, "gender": in.Gender, "phone": in.Phone, "email": in.Email, "class_id": in.ClassID, "enrollment_year": in.EnrollmentYear, "status": in.Status}
+			if in.AdvisorProvided {
+				fields["advisor_id"] = in.AdvisorID
+			}
 			tx := db.Model(&uniStudent{}).Where("tenant_id=? AND id=?", tid, in.ID).Updates(fields)
 			if tx.Error != nil {
 				studentError(c, 409, "更新失败，请检查学号是否重复或班级关联")
@@ -144,7 +207,7 @@ func studentWrite(update bool) gin.HandlerFunc {
 			studentOK(c, gin.H{"id": in.ID})
 			return
 		}
-		row := uniStudent{TenantID: tid, StudentNo: in.StudentNo, Name: in.Name, Gender: in.Gender, Phone: in.Phone, Email: in.Email, ClassID: in.ClassID, EnrollmentYear: in.EnrollmentYear, Status: in.Status}
+		row := uniStudent{TenantID: tid, StudentNo: in.StudentNo, Name: in.Name, Gender: in.Gender, Phone: in.Phone, Email: in.Email, ClassID: in.ClassID, AdvisorID: in.AdvisorID, EnrollmentYear: in.EnrollmentYear, Status: in.Status}
 		if err := db.Create(&row).Error; err != nil {
 			studentError(c, 409, "创建失败，请检查学号是否重复或班级关联")
 			return
