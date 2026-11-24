@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/gin-gonic/gin"
+	"github.com/go-sql-driver/mysql"
 	"github.com/xuri/excelize/v2"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"net/http"
@@ -322,6 +324,7 @@ func excelImport(student, commit bool) gin.HandlerFunc {
 		var issues []excelIssue
 		var preview [][]string
 		count := 0
+		stage := "validate"
 		run := func(db *gorm.DB) error {
 			ss, ts, errs, e := excelValidate(db, tid, student, commit, rows)
 			if e != nil {
@@ -338,10 +341,12 @@ func excelImport(student, commit bool) gin.HandlerFunc {
 			if !commit || len(issues) > 0 || count == 0 {
 				return nil
 			}
+			stage = "insert_profiles"
 			if student {
 				if e := db.CreateInBatches(&ss, 200).Error; e != nil {
 					return e
 				}
+				stage = "provision_accounts"
 				for _, s := range ss {
 					if e := provisionAccount(db, "student", tid, s.ID); e != nil {
 						return e
@@ -352,6 +357,7 @@ func excelImport(student, commit bool) gin.HandlerFunc {
 			if e := db.CreateInBatches(&ts, 200).Error; e != nil {
 				return e
 			}
+			stage = "provision_accounts"
 			for _, t := range ts {
 				if e := provisionAccount(db, "teacher", tid, t.ID); e != nil {
 					return e
@@ -365,7 +371,24 @@ func excelImport(student, commit bool) gin.HandlerFunc {
 			e = run(global.GVA_DB.WithContext(c.Request.Context()))
 		}
 		if e != nil {
-			studentError(c, 409, "处理失败，未提交导入；请检查重复编号或关联数据变化")
+			fields := []zap.Field{zap.Uint64("tenantId", tid), zap.Bool("student", student), zap.Bool("confirm", commit), zap.String("stage", stage)}
+			status := http.StatusInternalServerError
+			message := "导入处理失败，请联系管理员查看服务日志"
+			var mysqlError *mysql.MySQLError
+			if errors.As(e, &mysqlError) {
+				fields = append(fields, zap.Uint16("mysqlCode", mysqlError.Number))
+				switch mysqlError.Number {
+				case 1062, 1451, 1452:
+					status = http.StatusConflict
+					message = "重复编号或关联数据已变化，请重新校验后导入"
+				case 1054, 1146:
+					message = "导入所需的数据库表或字段缺失，请管理员检查数据库迁移"
+				}
+			} else {
+				fields = append(fields, zap.String("errorType", fmt.Sprintf("%T", e)))
+			}
+			zap.L().Error("Excel 批量导入失败", fields...)
+			studentError(c, status, message)
 			return
 		}
 		studentOK(c, gin.H{"valid": count, "errors": issues, "preview": preview, "imported": commit && len(issues) == 0 && count > 0})

@@ -7,6 +7,7 @@
 
 ## Done
 
+- [师生 Excel 导入错误提示](done/university-excel-import-errors.md)
 - [组织与师生档案查重校验](done/university-record-validation.md)
 - [高校组织架构班级批量导入](done/university-class-import.md)
 - [登录后无权限路由回退](done/login-route-fallback.md)

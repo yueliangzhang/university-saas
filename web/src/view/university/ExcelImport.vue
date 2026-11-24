@@ -41,6 +41,38 @@ const open=()=>{file.value=null;result.value=null;visible.value=true}
 const choose=e=>{file.value=e.target.files?.[0]||null;result.value=null;if(file.value&&(!/\.xlsx$/i.test(file.value.name)||file.value.size>10*1024*1024)){file.value=null;e.target.value='';ElMessage.warning('请选择10MB以内的xlsx文件')}}
 const saveBlob=(blob,name)=>{const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 const download=async action=>{busy.value=true;try{const r=await request({url:`${endpoint.value}/${action}`,method:'get',params:action==='export'?props.filters:{},responseType:'blob'});if(!r.data?.type?.includes('spreadsheetml'))throw Error('下载失败');saveBlob(r.data,`${props.kind}-${action}.xlsx`)}catch(e){ElMessage.error(e.message||'下载失败')}finally{busy.value=false}}
-const submit=async commit=>{if(!file.value)return;busy.value=true;try{const data=new FormData();data.append('file',file.value);const r=await request({url:`${endpoint.value}/import/${commit?'confirm':'preview'}`,method:'post',data,headers:{'Content-Type':'multipart/form-data'}});if(r.code!==0)throw Error(r.msg);result.value=r.data;if(r.data.imported){ElMessage.success(`成功导入 ${r.data.valid} 条`);visible.value=false;emit('imported')}}catch(e){result.value=null;ElMessage.error(e.message||'导入失败')}finally{busy.value=false}}
+const submit = async commit => {
+  if (!file.value) return
+  busy.value = true
+  try {
+    const data = new FormData()
+    data.append('file', file.value)
+    const response = await request({
+      url: `${endpoint.value}/import/${commit ? 'confirm' : 'preview'}`,
+      method: 'post',
+      data,
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    if (response.code !== 0) throw Error(response.msg)
+    result.value = response.data
+    if (result.value.imported) {
+      ElMessage.success(`成功导入 ${result.value.valid} 条`)
+      visible.value = false
+      emit('imported')
+    }
+  } catch (error) {
+    result.value = null
+    const status = error.response?.status
+    if (status === 413) {
+      ElMessage.error('文件大小超过服务器上传限制')
+    } else if (status === 504 && commit) {
+      ElMessage.error('服务器等待导入结果超时，请先检查学生或教师列表，再决定是否重试')
+    } else {
+      ElMessage.error(error.response?.data?.msg || error.message || '导入失败')
+    }
+  } finally {
+    busy.value = false
+  }
+}
 const report=()=>{const esc=v=>'"'+String(v??'').replace(/^[=+\-@\t\r]/,"'$&").replaceAll('"','""')+'"';saveBlob(new Blob(['\ufeff行号,编号,错误原因\n'+result.value.errors.map(r=>[r.row,r.number,r.message].map(esc).join(',')).join('\n')],{type:'text/csv;charset=utf-8'}),'import-errors.csv')}
 </script>
