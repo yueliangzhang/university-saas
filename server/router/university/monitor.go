@@ -53,6 +53,7 @@ func InitMonitorRouter(g *gin.RouterGroup) {
 	r.GET("export", monitorExport)
 	r.GET("dashboard", monitorStats)
 	r.GET("detail", monitorDetail)
+	r.GET("analytics", dashboardAnalytics)
 }
 func monitorQuery(c *gin.Context) *gorm.DB {
 	q := global.GVA_DB.Table("uni_leave_requests l").Joins("JOIN uni_students s ON s.id=l.student_id AND s.tenant_id=l.tenant_id").Joins("JOIN uni_classes cl ON cl.id=s.class_id AND cl.tenant_id=l.tenant_id").Joins("JOIN uni_majors ma ON ma.id=cl.major_id AND ma.tenant_id=l.tenant_id").Joins("JOIN uni_colleges co ON co.id=ma.college_id AND co.tenant_id=l.tenant_id").Joins("LEFT JOIN uni_teachers a ON a.id=s.advisor_id AND a.tenant_id=l.tenant_id").Where("l.tenant_id=?", c.MustGet("monitorTenant"))
