@@ -35,6 +35,10 @@ func excelOptions(db *gorm.DB, tid uint64, kind string, lock bool) ([]excelOptio
 		q = db.Table("uni_classes cl").Select("cl.id,cl.code,cl.name,cl.enrollment_year").Joins("JOIN uni_majors m ON m.tenant_id=cl.tenant_id AND m.id=cl.major_id").Joins("JOIN uni_colleges co ON co.tenant_id=m.tenant_id AND co.id=m.college_id").Where("cl.tenant_id=? AND cl.status=1 AND m.status=1 AND co.status=1", tid)
 	case "advisor":
 		q = db.Table("uni_teachers").Select("id,teacher_no AS code,name").Where("tenant_id=? AND status=1", tid)
+	case "major":
+		q = db.Table("uni_majors m").Select("m.id,m.code,m.name").
+			Joins("JOIN uni_colleges co ON co.tenant_id=m.tenant_id AND co.id=m.college_id").
+			Where("m.tenant_id=? AND m.status=1 AND co.status=1", tid)
 	default:
 		q = db.Table("uni_colleges").Select("id,code,name").Where("tenant_id=? AND status=1", tid)
 	}
@@ -66,9 +70,8 @@ func excelSend(c *gin.Context, f *excelize.File, name string) {
 	c.Header("Cache-Control", "no-store")
 	c.Data(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b.Bytes())
 }
-func excelBook(student bool) (*excelize.File, error) {
+func excelBook(h []string) (*excelize.File, error) {
 	f := excelize.NewFile()
-	h := excelHeaders(student)
 	for i, v := range h {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
 		if e := f.SetCellStr("Sheet1", cell, v); e != nil {
@@ -87,13 +90,20 @@ func excelBook(student bool) (*excelize.File, error) {
 	return f, e
 }
 func excelTemplate(student bool) gin.HandlerFunc {
+	if student {
+		return excelTemplateFor(excelHeaders(true), []string{"class", "advisor"})
+	}
+	return excelTemplateFor(excelHeaders(false), []string{"college"})
+}
+
+func excelTemplateFor(headers []string, kinds []string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tid, ok := studentTenant(c)
 		if !ok {
 			studentError(c, 403, "缺少高校身份")
 			return
 		}
-		f, e := excelBook(student)
+		f, e := excelBook(headers)
 		defer f.Close()
 		if e != nil {
 			studentError(c, 500, "模板生成失败")
@@ -103,10 +113,6 @@ func excelTemplate(student bool) gin.HandlerFunc {
 		if e != nil {
 			studentError(c, 500, "模板生成失败")
 			return
-		}
-		kinds := []string{"college"}
-		if student {
-			kinds = []string{"class", "advisor"}
 		}
 		for i, k := range kinds {
 			opts, e := excelOptions(global.GVA_DB, tid, k, false)
@@ -135,7 +141,7 @@ func excelTemplate(student bool) gin.HandlerFunc {
 		excelSend(c, f, "import-template")
 	}
 }
-func excelRead(c *gin.Context, student bool) ([][]string, error) {
+func excelRead(c *gin.Context, headers []string) ([][]string, error) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20+65536)
 	if e := c.Request.ParseMultipartForm(10 << 20); e != nil {
 		return nil, errors.New("上传失败或文件超过10MB")
@@ -173,7 +179,6 @@ func excelRead(c *gin.Context, student bool) ([][]string, error) {
 	if e = it.Error(); e != nil {
 		return nil, e
 	}
-	headers := excelHeaders(student)
 	if len(rows) < 2 || len(rows[0]) != len(headers) {
 		return nil, errors.New("模板不正确或无数据")
 	}
@@ -309,7 +314,7 @@ func excelImport(student, commit bool) gin.HandlerFunc {
 			studentError(c, 403, "缺少高校身份")
 			return
 		}
-		rows, e := excelRead(c, student)
+		rows, e := excelRead(c, excelHeaders(student))
 		if e != nil {
 			studentError(c, 400, e.Error())
 			return
@@ -373,7 +378,7 @@ func excelExport(student bool) gin.HandlerFunc {
 			studentError(c, 403, "缺少高校身份")
 			return
 		}
-		f, e := excelBook(student)
+		f, e := excelBook(excelHeaders(student))
 		defer f.Close()
 		if e != nil {
 			studentError(c, 500, "导出失败")

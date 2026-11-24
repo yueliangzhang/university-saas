@@ -236,6 +236,9 @@ func orgDelete(kind string) gin.HandlerFunc {
 
 func InitOrganizationRouter(privateGroup *gin.RouterGroup) {
 	group := privateGroup.Group("uni/org").Use(middleware.TenantAuth())
+	group.GET("classes/template", excelTemplateFor(classImportHeaders, []string{"major"}))
+	group.POST("classes/import/preview", classExcelImport(false))
+	group.POST("classes/import/confirm", classExcelImport(true))
 	for _, kind := range []string{"colleges", "majors", "classes"} {
 		k := kind
 		group.GET(k, orgList(k))

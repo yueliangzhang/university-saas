@@ -24,7 +24,10 @@
     <section class="org-panel">
       <div class="org-panel-head">
         <div><h2>组织信息管理</h2><p>切换分类，查看与维护学校组织数据</p></div>
-        <el-button type="primary" class="org-create" @click="openCreate">＋ 新增{{ labels[tab] }}</el-button>
+        <div class="org-actions">
+          <ExcelImport v-if="tab === 'classes'" kind="classes" @imported="reloadOrganization" />
+          <el-button type="primary" class="org-create" @click="openCreate">＋ 新增{{ labels[tab] }}</el-button>
+        </div>
       </div>
       <div class="org-tabs" role="tablist" aria-label="组织分类">
         <button v-for="item in [
@@ -104,6 +107,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
+import ExcelImport from './ExcelImport.vue'
 const labels={colleges:'学院',majors:'专业',classes:'班级'}
 const tab=ref('colleges'),rows=ref([]),colleges=ref([]),majors=ref([])
 const loading=ref(false),saving=ref(false),error=ref(''),dialog=ref(false),editing=ref(false)
@@ -134,6 +138,7 @@ const changeTab=()=>{keyword.value='';statusFilter.value='';load()}
 const api=(kind,method='get',data,params)=>request({url:`/uni/org/${kind}`,method,data,params})
 const fetchList=async kind=>{const r=await api(kind);if(r?.code!==0)throw new Error(r?.msg||'加载失败');return r.data?.list||[]}
 const load=async()=>{loading.value=true;error.value='';try{rows.value=await fetchList(tab.value)}catch(e){error.value=e.message}finally{loading.value=false}}
+const reloadOrganization = () => Promise.all([load(), refreshOverview()])
 const openCreate=async()=>{editing.value=false;form.value={code:'',name:'',status:1,collegeId:null,majorId:null,enrollmentYear:new Date().getFullYear()};await openDialog()}
 const openEdit=async row=>{editing.value=true;form.value={...row};await openDialog()}
 const openDialog=async()=>{try{if(tab.value==='majors')colleges.value=await fetchList('colleges');if(tab.value==='classes')majors.value=await fetchList('majors');dialog.value=true}catch(e){ElMessage.error(e.message)}}
@@ -149,6 +154,7 @@ onMounted(async()=>{await Promise.all([load(),refreshOverview()])})
 .org-heading h1{font-size:25px;line-height:1.3;margin:0;font-weight:750;color:#192d4f}
 .org-heading p{margin:9px 0 0;color:#6a7a92;font-size:13px}
 .org-heading-symbol{font-size:36px;font-weight:800;letter-spacing:4px;color:#d9e4fb;white-space:nowrap}
+.org-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}
 .org-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0}
 .org-stat{background:#fff;border:1px solid #e6ebf4;border-radius:16px;padding:21px 23px;box-shadow:0 6px 22px rgba(34,61,107,.035)}
 .org-stat-top{display:flex;align-items:center;gap:11px}
