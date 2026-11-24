@@ -286,7 +286,7 @@ func studentPortalAuth() gin.HandlerFunc {
 		err := global.GVA_DB.Table("uni_student_sessions sess").Select("sess.account_id,a.student_id,a.tenant_id,a.must_change_password").
 			Joins("JOIN uni_student_accounts a ON a.tenant_id=sess.tenant_id AND a.id=sess.account_id").
 			Joins("JOIN uni_students s ON s.tenant_id=a.tenant_id AND s.id=a.student_id").
-			Joins("JOIN uni_tenants t ON t.id=a.tenant_id,a.must_change_password").
+			Joins("JOIN uni_tenants t ON t.id=a.tenant_id").
 			Where("sess.token_hash=? AND sess.revoked_at IS NULL AND sess.expires_at>? AND a.status=1 AND s.status=1 AND t.status=1", studentHashToken(token), time.Now()).Take(&row).Error
 		if err != nil {
 			studentAuthError(c, 401, "登录已失效，请重新登录")
