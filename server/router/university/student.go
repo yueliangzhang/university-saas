@@ -152,7 +152,23 @@ func studentWrite(update bool) gin.HandlerFunc {
 			studentError(c, 400, "学生参数不合法")
 			return
 		}
+		if !validUniversityEmail(in.Email) {
+			studentError(c, 400, "邮箱格式不合法")
+			return
+		}
+		if !update {
+			in.ID = 0
+		}
 		db := global.GVA_DB
+		exists, err := universityValueExists(db, "uni_students", "student_no", tid, in.ID, in.StudentNo)
+		if err != nil {
+			studentError(c, 500, "学号查重失败")
+			return
+		}
+		if exists {
+			studentError(c, 409, "学号已存在")
+			return
+		}
 		valid, err := studentClassValid(db, tid, in.ClassID)
 		if err != nil {
 			studentError(c, 500, "班级校验失败")

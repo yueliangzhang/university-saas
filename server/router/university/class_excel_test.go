@@ -50,6 +50,8 @@ func TestClassExcelImport(t *testing.T) {
 	router.GET("/template", excelTemplateFor(classImportHeaders, []string{"major"}))
 	router.POST("/preview", classExcelImport(false))
 	router.POST("/confirm", classExcelImport(true))
+	router.POST("/classes", orgWrite("classes", false))
+	router.PUT("/classes", orgWrite("classes", true))
 
 	template := httptest.NewRecorder()
 	router.ServeHTTP(template, httptest.NewRequest(http.MethodGet, "/template", nil))
@@ -136,6 +138,35 @@ func TestClassExcelImport(t *testing.T) {
 	checkCount(2)
 	if got := importRows("/confirm", first); got.Imported || len(got.Errors) != 1 {
 		t.Fatalf("existing code should be rejected: %+v", got)
+	}
+	duplicateName := []string{"0005", " 一班 ", "CS", "2026"}
+	if got := importRows("/preview", duplicateName); got.Valid != 0 || len(got.Errors) != 1 || got.Errors[0].Message != "班级名称已存在" {
+		t.Fatalf("existing class name should be rejected: %+v", got)
+	}
+	newClass := []string{"0006", "三班", "CS", "2026"}
+	repeatedName := []string{"0007", "三班", "CS", "2026"}
+	if got := importRows("/confirm", newClass, repeatedName); got.Imported || len(got.Errors) != 1 || got.Errors[0].Message != "文件内班级名称重复" {
+		t.Fatalf("repeated name should prevent entire import: %+v", got)
+	}
+
+	for _, tc := range []struct {
+		method string
+		body   string
+		status int
+		msg    string
+	}{
+		{http.MethodPost, `{"code":"0003","name":"一班","majorId":1,"enrollmentYear":2026,"status":1}`, http.StatusConflict, "组织名称已存在"},
+		{http.MethodPost, `{"id":1,"code":"0001","name":"三班","majorId":1,"enrollmentYear":2026,"status":1}`, http.StatusConflict, "组织编码已存在"},
+		{http.MethodPut, `{"id":1,"code":"0001","name":"二班","majorId":1,"enrollmentYear":2026,"status":1}`, http.StatusConflict, "组织名称已存在"},
+		{http.MethodPut, `{"id":1,"code":"0001","name":"一班","majorId":1,"enrollmentYear":2027,"status":1}`, http.StatusOK, "成功"},
+	} {
+		request := httptest.NewRequest(tc.method, "/classes", bytes.NewBufferString(tc.body))
+		request.Header.Set("Content-Type", "application/json")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != tc.status || !bytes.Contains(response.Body.Bytes(), []byte(tc.msg)) {
+			t.Fatalf("%s returned %d: %s", tc.method, response.Code, response.Body)
+		}
 	}
 	checkCount(2)
 }

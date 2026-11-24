@@ -33,7 +33,8 @@ func classExcelImport(commit bool) gin.HandlerFunc {
 				return err
 			}
 			classes := make([]orgClass, 0, len(rows))
-			seen := make(map[string]bool, len(rows))
+			seenCodes := make(map[string]bool, len(rows))
+			seenNames := make(map[string]bool, len(rows))
 			for index, raw := range rows {
 				var fields [5]string
 				for column, value := range raw {
@@ -64,18 +65,32 @@ func classExcelImport(commit bool) gin.HandlerFunc {
 					bad("班级编码、名称、入学年份（1900–2200）或状态不合法")
 					continue
 				}
-				key := strings.ToLower(input.Code)
-				if seen[key] {
+				codeKey := strings.ToLower(input.Code)
+				nameKey := strings.ToLower(input.Name)
+				if seenCodes[codeKey] {
 					bad("文件内班级编码重复")
 					continue
 				}
-				seen[key] = true
-				var existing int64
-				if err := db.Model(&orgClass{}).Where("tenant_id=? AND code=?", tenantID, input.Code).Count(&existing).Error; err != nil {
+				if seenNames[nameKey] {
+					bad("文件内班级名称重复")
+					continue
+				}
+				seenCodes[codeKey] = true
+				seenNames[nameKey] = true
+				codeExists, err := universityValueExists(db, "uni_classes", "code", tenantID, 0, input.Code)
+				if err != nil {
 					return err
 				}
-				if existing > 0 {
+				if codeExists {
 					bad("班级编码已存在")
+					continue
+				}
+				nameExists, err := universityValueExists(db, "uni_classes", "name", tenantID, 0, input.Name)
+				if err != nil {
+					return err
+				}
+				if nameExists {
+					bad("班级名称已存在")
 					continue
 				}
 				classes = append(classes, orgClass{
@@ -97,7 +112,7 @@ func classExcelImport(commit bool) gin.HandlerFunc {
 			err = run(db)
 		}
 		if err != nil {
-			orgFail(c, http.StatusConflict, "处理失败，未提交导入；请检查重复编码或专业是否变化")
+			orgFail(c, http.StatusConflict, "处理失败，未提交导入；请检查班级编码、名称或专业是否变化")
 			return
 		}
 		orgOK(c, gin.H{

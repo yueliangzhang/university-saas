@@ -115,6 +115,22 @@ func teacherWrite(update bool) gin.HandlerFunc {
 			teacherError(c, 400, "教师资料不合法")
 			return
 		}
+		if !validUniversityEmail(in.Email) {
+			teacherError(c, 400, "邮箱格式不合法")
+			return
+		}
+		if !update {
+			in.ID = 0
+		}
+		exists, err := universityValueExists(global.GVA_DB, "uni_teachers", "teacher_no", tid, in.ID, in.TeacherNo)
+		if err != nil {
+			teacherError(c, 500, "工号查重失败")
+			return
+		}
+		if exists {
+			teacherError(c, 409, "工号已存在")
+			return
+		}
 		valid, err := teacherCollegeValid(tid, in.CollegeID)
 		if err != nil {
 			teacherError(c, 500, "学院校验失败")

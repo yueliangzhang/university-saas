@@ -144,6 +144,9 @@ func orgWrite(kind string, update bool) gin.HandlerFunc {
 		}
 		in.Code = strings.TrimSpace(in.Code)
 		in.Name = strings.TrimSpace(in.Name)
+		if !update {
+			in.ID = 0
+		}
 		db := global.GVA_DB
 		valid, err := orgParentValid(db, tid, kind, in)
 		if err != nil {
@@ -155,6 +158,20 @@ func orgWrite(kind string, update bool) gin.HandlerFunc {
 			return
 		}
 		table := orgTable(kind)
+		for _, field := range []struct{ key, value, label string }{
+			{"code", in.Code, "组织编码"},
+			{"name", in.Name, "组织名称"},
+		} {
+			exists, err := universityValueExists(db, table, field.key, tid, in.ID, field.value)
+			if err != nil {
+				orgFail(c, 500, "组织数据查重失败")
+				return
+			}
+			if exists {
+				orgFail(c, 409, field.label+"已存在")
+				return
+			}
+		}
 		if update {
 			if in.Status == 2 && (kind == "colleges" || kind == "majors") {
 				var count int64
@@ -183,7 +200,7 @@ func orgWrite(kind string, update bool) gin.HandlerFunc {
 			}
 			tx := db.Table(table).Where("tenant_id=? AND id=?", tid, in.ID).Updates(fields)
 			if tx.Error != nil {
-				orgFail(c, 409, "更新失败，请检查编码是否重复或关联约束")
+				orgFail(c, 409, "更新失败，请检查组织编码或名称是否重复、上级是否有效")
 				return
 			}
 			if tx.RowsAffected == 0 {
@@ -203,7 +220,7 @@ func orgWrite(kind string, update bool) gin.HandlerFunc {
 			result = db.Create(&orgClass{TenantID: tid, MajorID: in.MajorID, Code: in.Code, Name: in.Name, EnrollmentYear: in.EnrollmentYear, Status: in.Status})
 		}
 		if result == nil || result.Error != nil {
-			orgFail(c, 409, "创建失败，请检查编码是否重复或关联约束")
+			orgFail(c, 409, "创建失败，请检查组织编码或名称是否重复、上级是否有效")
 			return
 		}
 		orgOK(c, gin.H{"created": true})

@@ -32,7 +32,7 @@ const props=defineProps({kind:{type:String,required:true},filters:{type:Object,d
 const instructions = {
   students: '学号、姓名、班级、辅导员必填。',
   teachers: '工号、姓名、所属学院必填。',
-  classes: '班级编码、名称、所属专业和入学年份必填。专业可从模板下拉框选择，也可填写专业编码。状态留空默认为启用。'
+  classes: '班级编码和名称在本校内均须唯一。所属专业可从模板下拉框选择，也可填写专业编码。入学年份必填，状态留空默认为启用。'
 }
 const endpoint = computed(() => props.kind === 'classes' ? '/uni/org/classes' : `/uni/${props.kind}`)
 const emit=defineEmits(['imported'])

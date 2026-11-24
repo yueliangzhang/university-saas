@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"net/http"
-	"net/mail"
 	"strconv"
 	"strings"
 )
@@ -244,12 +243,16 @@ func excelValidate(db *gorm.DB, tid uint64, student, commit bool, rows [][]strin
 			continue
 		}
 		seen[key] = true
-		var n int64
-		if e = db.Table(table).Where("tenant_id=? AND "+no+"=?", tid, r[0]).Count(&n).Error; e != nil {
-			return nil, nil, nil, e
+		exists, err := universityValueExists(db, table, no, tid, 0, r[0])
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		if n > 0 {
-			bad("编号已存在")
+		if exists {
+			if student {
+				bad("学号已存在")
+			} else {
+				bad("工号已存在")
+			}
 			continue
 		}
 		gidx, pidx, eidx, sidx := 3, 5, 6, 7
@@ -270,12 +273,9 @@ func excelValidate(db *gorm.DB, tid uint64, student, commit bool, rows [][]strin
 			bad("状态不合法")
 			continue
 		}
-		if r[eidx] != "" {
-			a, err := mail.ParseAddress(r[eidx])
-			if err != nil || a.Address != r[eidx] {
-				bad("邮箱不合法")
-				continue
-			}
+		if !validUniversityEmail(r[eidx]) {
+			bad("邮箱不合法")
+			continue
 		}
 		if student {
 			a, ok := excelMatch(advisors, r[3])
