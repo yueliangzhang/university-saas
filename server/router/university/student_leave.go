@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/gin-gonic/gin"
@@ -109,7 +110,11 @@ func studentLeaveCreate(c *gin.Context) {
 	}
 	start, e1 := leaveTime(in.StartAt)
 	end, e2 := leaveTime(in.EndAt)
-	if e1 != nil || e2 != nil || !end.After(start) {
+	if e1 != nil || e2 != nil || start.Format(time.DateTime) != in.StartAt || end.Format(time.DateTime) != in.EndAt {
+		studentAuthError(c, 400, "请选择有效的开始时间和结束时间")
+		return
+	}
+	if !end.After(start) {
 		studentAuthError(c, 400, "结束时间必须晚于开始时间")
 		return
 	}
@@ -120,6 +125,21 @@ func studentLeaveCreate(c *gin.Context) {
 	}
 	if !valid {
 		studentAuthError(c, 403, "学生已不在读或无权提交")
+		return
+	}
+	// Leave times are stored as wall times and compared with the database clock in reports.
+	var databaseNow string
+	if err := global.GVA_DB.Raw("SELECT CAST(CURRENT_TIMESTAMP AS CHAR)").Scan(&databaseNow).Error; err != nil {
+		studentAuthError(c, 500, "暂时无法校验请假时间，请重试")
+		return
+	}
+	now, err := leaveTime(databaseNow)
+	if err != nil {
+		studentAuthError(c, 500, "暂时无法校验请假时间，请重试")
+		return
+	}
+	if !start.After(now) {
+		studentAuthError(c, 400, "开始时间必须晚于当前时间")
 		return
 	}
 	row := uniLeave{TenantID: tid, StudentID: sid, LeaveType: in.LeaveType, Reason: in.Reason, StartAt: start, EndAt: end, Status: "pending"}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/gin-gonic/gin"
@@ -66,7 +67,29 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 		router.ServeHTTP(response, request)
 		return response
 	}
-	fields := map[string]string{"leaveType": "sick", "reason": "test", "startAt": "2026-11-24 10:00:00", "endAt": "2026-11-24 11:00:00"}
+	const layout = "2006-01-02 15:04:05"
+	now := time.Now().UTC()
+	fields := map[string]string{"leaveType": "sick", "reason": "test", "startAt": now.Add(time.Hour).Format(layout), "endAt": now.Add(2 * time.Hour).Format(layout)}
+	for _, tc := range []struct {
+		start string
+		end   string
+		msg   string
+	}{
+		{"invalid", fields["endAt"], "请选择有效的开始时间和结束时间"},
+		{fields["startAt"] + ".1", fields["endAt"], "请选择有效的开始时间和结束时间"},
+		{now.Add(-time.Hour).Format(layout), fields["endAt"], "开始时间必须晚于当前时间"},
+		{fields["startAt"], fields["startAt"], "结束时间必须晚于开始时间"},
+		{fields["startAt"], now.Format(layout), "结束时间必须晚于开始时间"},
+	} {
+		input, err := json.Marshal(map[string]string{"leaveType": "sick", "reason": "test", "startAt": tc.start, "endAt": tc.end})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := send(http.MethodPost, "/student/leaves", "application/json", input, "")
+		if response.Code != http.StatusBadRequest || !bytes.Contains(response.Body.Bytes(), []byte(tc.msg)) {
+			t.Fatalf("validate time: %d %s", response.Code, response.Body)
+		}
+	}
 	legacy, err := json.Marshal(fields)
 	if err != nil {
 		t.Fatal(err)

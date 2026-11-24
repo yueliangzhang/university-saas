@@ -120,10 +120,10 @@
       <el-dialog v-model="leaveDialog" title="申请请假" class="leave-dialog" width="min(560px, 94vw)" append-to-body destroy-on-close>
         <el-alert title="请如实填写请假信息，提交后由学校管理员审批。" type="info" :closable="false" class="dialog-alert" />
         <el-form label-position="top" @submit.prevent="submitLeave">
-          <el-form-item label="请假类型" required><el-select v-model="leaveForm.leaveType" style="width:100%"><el-option label="事假" value="personal"/><el-option label="病假" value="sick"/><el-option label="其他" value="other"/></el-select></el-form-item>
-          <el-form-item label="开始时间" required><el-date-picker v-model="leaveForm.startAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择开始时间"/></el-form-item>
-          <el-form-item label="结束时间" required><el-date-picker v-model="leaveForm.endAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择结束时间"/></el-form-item>
-          <el-form-item label="请假原因" required><el-input v-model="leaveForm.reason" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="请简要说明请假原因"/></el-form-item>
+          <el-form-item label="请假类型" required :error="leaveErrors.leaveType"><el-select v-model="leaveForm.leaveType" style="width:100%" @change="delete leaveErrors.leaveType"><el-option label="事假" value="personal"/><el-option label="病假" value="sick"/><el-option label="其他" value="other"/></el-select></el-form-item>
+          <el-form-item label="开始时间" required :error="leaveErrors.startAt"><el-date-picker v-model="leaveForm.startAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择开始时间" @change="clearLeaveTimeErrors"/></el-form-item>
+          <el-form-item label="结束时间" required :error="leaveErrors.endAt"><el-date-picker v-model="leaveForm.endAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择结束时间" @change="clearLeaveTimeErrors"/></el-form-item>
+          <el-form-item label="请假原因" required :error="leaveErrors.reason"><el-input v-model="leaveForm.reason" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="请简要说明请假原因" @input="delete leaveErrors.reason"/></el-form-item>
           <el-form-item label="证明文件（选填）">
             <input type="file" multiple aria-label="证明文件（选填）" accept=".pdf,.jpg,.jpeg,.png" :disabled="leaveSaving" @change="selectProof" />
             <div class="muted w-full">最多 5 个文件，支持 PDF、JPG、PNG，每个不超过 5 MB</div>
@@ -237,6 +237,7 @@ const leaveProofs = ref([])
 const maxProofCount = 5
 const maxProofSize = 5 * 1024 * 1024
 const leaveForm = ref({ leaveType: 'personal', reason: '', startAt: '', endAt: '' })
+const leaveErrors = ref({})
 const statusFilter = ref('all')
 const filteredLeaveRows = computed(() => statusFilter.value === 'all' ? leaveRows.value : leaveRows.value.filter(r => r.status === statusFilter.value))
 const stats = computed(() => [
@@ -274,7 +275,26 @@ const selectProof = event => {
 const openLeaveDialog = () => {
   leaveForm.value = { leaveType: 'personal', reason: '', startAt: '', endAt: '' }
   leaveProofs.value = []
+  leaveErrors.value = {}
   leaveDialog.value = true
+}
+const clearLeaveTimeErrors = () => {
+  delete leaveErrors.value.startAt
+  delete leaveErrors.value.endAt
+}
+const validateLeave = fields => {
+  const errors = {}
+  const start = Date.parse(fields.startAt?.replace(' ', 'T'))
+  const end = Date.parse(fields.endAt?.replace(' ', 'T'))
+  if (!Object.hasOwn(leaveTypes, fields.leaveType)) errors.leaveType = '请选择请假类型'
+  if (!Number.isFinite(start)) errors.startAt = '请选择有效的开始时间'
+  else if (start <= Date.now()) errors.startAt = '开始时间必须晚于当前时间'
+  if (!Number.isFinite(end)) errors.endAt = '请选择有效的结束时间'
+  else if (end <= start) errors.endAt = '结束时间必须晚于开始时间'
+  if (!fields.reason) errors.reason = '请填写请假原因'
+  else if (new TextEncoder().encode(fields.reason).length > 2000) errors.reason = '请假原因不能超过 2000 字节'
+  leaveErrors.value = errors
+  return Object.keys(errors).length === 0
 }
 const downloadProof = async (row, index) => {
   try {
@@ -286,10 +306,10 @@ const downloadProof = async (row, index) => {
 const submitLeave = async () => {
   if (leaveSaving.value) return
   const f = leaveForm.value
-  if (!f.reason?.trim() || !f.startAt || !f.endAt || f.endAt <= f.startAt) { ElMessage.warning('请填写完整信息，结束时间必须晚于开始时间'); return }
+  const fields = { leaveType: f.leaveType, reason: f.reason.trim(), startAt: f.startAt, endAt: f.endAt }
+  if (!validateLeave(fields)) return
   leaveSaving.value = true
   try {
-    const fields = { leaveType: f.leaveType, reason: f.reason.trim(), startAt: f.startAt, endAt: f.endAt }
     if (leaveProofs.value.length) {
       const body = new FormData()
       for (const [key, value] of Object.entries(fields)) body.append(key, value)
