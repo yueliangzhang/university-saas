@@ -208,7 +208,12 @@ func studentWrite(update bool) gin.HandlerFunc {
 			return
 		}
 		row := uniStudent{TenantID: tid, StudentNo: in.StudentNo, Name: in.Name, Gender: in.Gender, Phone: in.Phone, Email: in.Email, ClassID: in.ClassID, AdvisorID: in.AdvisorID, EnrollmentYear: in.EnrollmentYear, Status: in.Status}
-		if err := db.Create(&row).Error; err != nil {
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if e := tx.Create(&row).Error; e != nil {
+				return e
+			}
+			return provisionAccount(tx, "student", tid, row.ID)
+		}); err != nil {
 			studentError(c, 409, "创建失败，请检查学号是否重复或班级关联")
 			return
 		}
@@ -241,6 +246,10 @@ func InitStudentRouter(privateGroup *gin.RouterGroup) {
 	group := privateGroup.Group("uni").Use(middleware.TenantAuth())
 
 	group.GET("/students", studentList)
+	group.GET("/students/template", excelTemplate(true))
+	group.GET("/students/export", excelExport(true))
+	group.POST("/students/import/preview", excelImport(true, false))
+	group.POST("/students/import/confirm", excelImport(true, true))
 	group.POST("/students", studentWrite(false))
 	group.PUT("/students", studentWrite(true))
 	group.DELETE("/students", studentDelete)

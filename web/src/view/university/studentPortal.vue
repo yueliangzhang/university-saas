@@ -30,7 +30,8 @@
       </div>
     </template>
 
-    <template v-else>
+    <div v-else-if="mustChange" style="max-width:440px;margin:60px auto;padding:24px"><el-card><h2>首次登录，请修改密码</h2><el-form label-position="top" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password"/></el-form-item><el-form-item label="新密码（6位）"><el-input v-model="newPassword" type="password"/></el-form-item><el-form-item label="确认新密码"><el-input v-model="confirmPassword" type="password"/></el-form-item><el-button native-type="submit" type="primary">确认修改</el-button><el-button @click="logout">退出</el-button></el-form></el-card></div>
+<template v-else>
       <el-container class="app-shell">
         <el-aside class="sidebar" width="236px">
           <div class="sidebar-brand"><span class="brand-icon"><el-icon><School /></el-icon></span><span>学生服务平台<small>STUDENT PORTAL</small></span></div>
@@ -95,7 +96,7 @@
 
             <template v-else>
               <div class="page-heading"><div><h1>账号安全</h1><p>管理登录密码，保护你的学生账号</p></div></div>
-              <div class="section-card security-card"><div class="security-heading"><span class="security-icon"><el-icon :size="23"><Lock /></el-icon></span><div><h2>修改登录密码</h2><p>建议使用至少 12 位的强密码，并避免与其他网站重复。</p></div></div><el-form label-position="top" class="password-form" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password" show-password autocomplete="current-password" placeholder="请输入当前密码" /></el-form-item><el-form-item label="新密码"><el-input v-model="newPassword" type="password" show-password autocomplete="new-password" placeholder="至少 12 位，最多 72 字节" /></el-form-item><el-button type="primary" native-type="submit" :loading="passwordSaving" :disabled="passwordSaving">保存新密码</el-button></el-form><el-alert class="password-tip" title="密码修改成功后，当前会话将自动退出，请使用新密码重新登录。" type="info" :closable="false" show-icon /></div>
+              <div class="section-card security-card"><div class="security-heading"><span class="security-icon"><el-icon :size="23"><Lock /></el-icon></span><div><h2>修改登录密码</h2><p>建议使用6 位密码，并避免与其他网站重复。</p></div></div><el-form label-position="top" class="password-form" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password" show-password autocomplete="current-password" placeholder="请输入当前密码" /></el-form-item><el-form-item label="新密码"><el-input v-model="newPassword" type="password" show-password autocomplete="new-password" placeholder="固定6位" /></el-form-item><el-button type="primary" native-type="submit" :loading="passwordSaving" :disabled="passwordSaving">保存新密码</el-button></el-form><el-alert class="password-tip" title="密码修改成功后，当前会话将自动退出，请使用新密码重新登录。" type="info" :closable="false" show-icon /></div>
             </template>
           </el-main>
         </el-container>
@@ -124,6 +125,8 @@ import { School, CircleCheck, Clock, Lock, Right, Plus, House, Calendar, User, S
 import axios from 'axios'
 
 const form = ref({ tenantId: '', studentNo: '', password: '' })
+const mustChange = ref(false)
+const confirmPassword = ref('')
 const token = ref(sessionStorage.getItem('uni_student_token') || '')
 const me = ref(null)
 const loading = ref(false)
@@ -150,6 +153,7 @@ const call = async (url, method = 'get', data, params) => {
 }
 const leaveError = e => e.response?.data?.msg || e.message || '操作失败'
 const clear = () => {
+ mustChange.value=false; confirmPassword.value=""
   token.value = ''
   sessionStorage.removeItem('uni_student_token')
   me.value = null
@@ -161,7 +165,7 @@ const clear = () => {
   leavePage.value = 1
 }
 const loadMe = async () => {
-  try { me.value = await call('/uni/student-portal/me') }
+  try { const d = await call('/uni/student-portal/me'); mustChange.value=!!d.mustChangePassword; me.value=mustChange.value?null:d }
   catch (e) { clear(); ElMessage.error(leaveError(e)) }
 }
 const login = async () => {
@@ -174,7 +178,7 @@ const login = async () => {
     sessionStorage.setItem('uni_student_token', data.token)
     form.value.password = ''
     await loadMe()
-    if (token.value) await loadLeaves()
+    if (token.value && !mustChange.value) await loadLeaves()
   } catch (e) { ElMessage.error(leaveError(e)) }
   finally { loading.value = false }
 }
@@ -185,8 +189,8 @@ const logout = async () => {
 }
 const changePassword = async () => {
   if (passwordSaving.value) return
-  if (!oldPassword.value || new TextEncoder().encode(newPassword.value).length < 12 || new TextEncoder().encode(newPassword.value).length > 72) {
-    ElMessage.warning('请输入当前密码，新密码长度应为 12–72 字节'); return
+  if (!oldPassword.value || Array.from(newPassword.value).length !== 6 || newPassword.value === "123456" || (mustChange.value && confirmPassword.value !== newPassword.value)) {
+    ElMessage.warning('请输入当前密码，新密码长度应为 6位'); return
   }
   passwordSaving.value = true
   try {
@@ -250,7 +254,7 @@ const cancelLeave = async row => {
     await loadLeaves()
   } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(leaveError(e)) }
 }
-onMounted(async () => { window.addEventListener('resize', onResize); if (token.value) { await loadMe(); if (token.value) await loadLeaves() } })
+onMounted(async () => { window.addEventListener('resize', onResize); if (token.value) { await loadMe(); if (token.value && !mustChange.value) await loadLeaves() } })
 onUnmounted(() => window.removeEventListener('resize', onResize))
 </script>
 

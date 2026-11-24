@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Teacher sessions are separate from administrator JWTs and student sessions.
@@ -41,14 +42,15 @@ func teacherPortalAuth() gin.HandlerFunc {
 			return
 		}
 		var row struct {
-			AccountID uint64 `gorm:"column:account_id"`
-			TeacherID uint64 `gorm:"column:teacher_id"`
-			TenantID  uint64 `gorm:"column:tenant_id"`
+			MustChangePassword bool
+			AccountID          uint64 `gorm:"column:account_id"`
+			TeacherID          uint64 `gorm:"column:teacher_id"`
+			TenantID           uint64 `gorm:"column:tenant_id"`
 		}
-		err := global.GVA_DB.Table("uni_teacher_sessions s").Select("s.account_id,a.teacher_id,a.tenant_id").
+		err := global.GVA_DB.Table("uni_teacher_sessions s").Select("s.account_id,a.teacher_id,a.tenant_id,a.must_change_password").
 			Joins("JOIN uni_teacher_accounts a ON a.tenant_id=s.tenant_id AND a.id=s.account_id").
 			Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").
-			Joins("JOIN uni_tenants u ON u.id=a.tenant_id").
+			Joins("JOIN uni_tenants u ON u.id=a.tenant_id,a.must_change_password").
 			Where("s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND a.status=1 AND t.status=1 AND u.status=1", studentHashToken(token), time.Now()).Take(&row).Error
 		if err != nil {
 			teacherPortalFail(c, 401, "教师登录已失效")
@@ -58,6 +60,19 @@ func teacherPortalAuth() gin.HandlerFunc {
 		c.Set(teacherTenantKey, row.TenantID)
 		c.Set(teacherIDKey, row.TeacherID)
 		c.Set(teacherAccountKey, row.AccountID)
+		if row.MustChangePassword {
+			path := c.FullPath()
+			if strings.HasSuffix(path, "/me") {
+				c.JSON(200, gin.H{"code": 0, "data": gin.H{"mustChangePassword": true}})
+				c.Abort()
+				return
+			}
+			if !strings.HasSuffix(path, "/change-password") && !strings.HasSuffix(path, "/logout") {
+				teacherPortalFail(c, 403, "请先修改初始密码")
+				c.Abort()
+				return
+			}
+		}
 		c.Next()
 	}
 }
@@ -72,15 +87,28 @@ func teacherPortalLogin(c *gin.Context) {
 		return
 	}
 	var row struct {
-		AccountID    uint64 `gorm:"column:account_id"`
-		TeacherID    uint64 `gorm:"column:teacher_id"`
-		TenantID     uint64 `gorm:"column:tenant_id"`
-		PasswordHash string `gorm:"column:password_hash"`
+		MustChangePassword bool
+		FailedAttempts     int
+		LockedUntil        *time.Time
+		AccountID          uint64 `gorm:"column:account_id"`
+		TeacherID          uint64 `gorm:"column:teacher_id"`
+		TenantID           uint64 `gorm:"column:tenant_id"`
+		PasswordHash       string `gorm:"column:password_hash"`
 	}
-	err := global.GVA_DB.Table("uni_teacher_accounts a").Select("a.id account_id,a.teacher_id,a.tenant_id,a.password_hash").
+	err := global.GVA_DB.Table("uni_teacher_accounts a").Select("a.id account_id,a.teacher_id,a.tenant_id,a.password_hash,a.must_change_password,a.failed_attempts,a.locked_until").
 		Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").Joins("JOIN uni_tenants u ON u.id=a.tenant_id").
 		Where("a.tenant_id=? AND t.teacher_no=? AND a.status=1 AND t.status=1 AND u.status=1", in.TenantID, strings.TrimSpace(in.TeacherNo)).Take(&row).Error
+	if err == nil && row.LockedUntil != nil && row.LockedUntil.After(time.Now()) {
+		teacherPortalFail(c, 429, "登录暂时锁定，请15分钟后重试")
+		return
+	}
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(row.PasswordHash), []byte(in.Password)) != nil {
+		if err == nil {
+			if e := recordLoginFailure("teacher", row.TenantID, row.AccountID, row.PasswordHash); e != nil {
+				teacherPortalFail(c, 500, "登录失败")
+				return
+			}
+		}
 		teacherPortalFail(c, 401, "高校、工号或密码错误")
 		return
 	}
@@ -92,16 +120,27 @@ func teacherPortalLogin(c *gin.Context) {
 	token := base64.RawURLEncoding.EncodeToString(random)
 	expires := time.Now().Add(12 * time.Hour)
 	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		var current struct {
+			PasswordHash string
+			LockedUntil  *time.Time
+			Status       int
+		}
+		if e := tx.Table("uni_teacher_accounts").Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", row.TenantID, row.AccountID).Take(&current).Error; e != nil {
+			return e
+		}
+		if current.PasswordHash != row.PasswordHash || current.Status != 1 || (current.LockedUntil != nil && current.LockedUntil.After(time.Now())) {
+			return gorm.ErrRecordNotFound
+		}
 		if e := tx.Table("uni_teacher_sessions").Create(map[string]interface{}{"tenant_id": row.TenantID, "account_id": row.AccountID, "token_hash": studentHashToken(token), "expires_at": expires}).Error; e != nil {
 			return e
 		}
-		return tx.Table("uni_teacher_accounts").Where("tenant_id=? AND id=?", row.TenantID, row.AccountID).Update("last_login_at", time.Now()).Error
+		return tx.Table("uni_teacher_accounts").Where("tenant_id=? AND id=?", row.TenantID, row.AccountID).Updates(map[string]interface{}{"last_login_at": time.Now(), "failed_attempts": 0, "locked_until": nil}).Error
 	})
 	if err != nil {
 		teacherPortalFail(c, 500, "创建会话失败")
 		return
 	}
-	teacherPortalOK(c, gin.H{"token": token, "expiresAt": expires})
+	teacherPortalOK(c, gin.H{"mustChangePassword": row.MustChangePassword, "token": token, "expiresAt": expires})
 }
 func teacherPortalMe(c *gin.Context) {
 	var row uniTeacher
@@ -117,7 +156,7 @@ func teacherPortalChangePassword(c *gin.Context) {
 		NewPassword string `json:"newPassword"`
 	}
 	if c.ShouldBindJSON(&in) != nil || !studentPasswordValid(in.NewPassword) {
-		teacherPortalFail(c, 400, "新密码至少12位，最多72字节")
+		teacherPortalFail(c, 400, "新密码必须为6位且不能为123456")
 		return
 	}
 	tid := c.GetUint64(teacherTenantKey)
@@ -133,13 +172,17 @@ func teacherPortalChangePassword(c *gin.Context) {
 		teacherPortalFail(c, 401, "旧密码错误")
 		return
 	}
+	if in.OldPassword == in.NewPassword {
+		teacherPortalFail(c, 400, "新旧密码不能相同")
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		teacherPortalFail(c, 500, "密码处理失败")
 		return
 	}
 	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
-		r := tx.Table("uni_teacher_accounts").Where("tenant_id=? AND id=? AND password_hash=?", tid, aid, account.PasswordHash).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now()})
+		r := tx.Table("uni_teacher_accounts").Where("tenant_id=? AND id=? AND password_hash=?", tid, aid, account.PasswordHash).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now(), "must_change_password": false, "failed_attempts": 0, "locked_until": nil})
 		if r.Error != nil {
 			return r.Error
 		}
@@ -357,11 +400,11 @@ func teacherAccountPassword(c *gin.Context, reset bool) {
 		TeacherID uint64 `json:"teacherId"`
 		Password  string `json:"password"`
 	}
-	if c.ShouldBindJSON(&in) != nil || in.TeacherID == 0 || !studentPasswordValid(in.Password) {
-		teacherPortalFail(c, 400, "教师ID或密码不合法（12-72字节）")
+	if c.ShouldBindJSON(&in) != nil || in.TeacherID == 0 {
+		teacherPortalFail(c, 400, "教师ID不合法")
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte("123456"), bcrypt.DefaultCost)
 	if err != nil {
 		teacherPortalFail(c, 500, "密码处理失败")
 		return
@@ -375,7 +418,7 @@ func teacherAccountPassword(c *gin.Context, reset bool) {
 			return gorm.ErrRecordNotFound
 		}
 		if reset {
-			r := tx.Table("uni_teacher_accounts").Where("tenant_id=? AND teacher_id=?", tid, in.TeacherID).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now()})
+			r := tx.Table("uni_teacher_accounts").Where("tenant_id=? AND teacher_id=?", tid, in.TeacherID).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now(), "must_change_password": true, "failed_attempts": 0, "locked_until": nil})
 			if r.Error != nil {
 				return r.Error
 			}
@@ -384,7 +427,7 @@ func teacherAccountPassword(c *gin.Context, reset bool) {
 			}
 			return tx.Exec("UPDATE uni_teacher_sessions s JOIN uni_teacher_accounts a ON a.tenant_id=s.tenant_id AND a.id=s.account_id SET s.revoked_at=NOW(3) WHERE a.tenant_id=? AND a.teacher_id=? AND s.revoked_at IS NULL", tid, in.TeacherID).Error
 		}
-		return tx.Table("uni_teacher_accounts").Create(map[string]interface{}{"tenant_id": tid, "teacher_id": in.TeacherID, "password_hash": string(hash), "status": 1}).Error
+		return tx.Table("uni_teacher_accounts").Create(map[string]interface{}{"tenant_id": tid, "teacher_id": in.TeacherID, "password_hash": string(hash), "status": 1, "must_change_password": true}).Error
 	})
 	if err != nil {
 		teacherPortalFail(c, 409, "操作失败：教师不存在、已停用或账号状态不符合要求")

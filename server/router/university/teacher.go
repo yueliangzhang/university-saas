@@ -1,6 +1,7 @@
 package university
 
 import (
+	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
@@ -137,7 +138,12 @@ func teacherWrite(update bool) gin.HandlerFunc {
 			return
 		}
 		row := uniTeacher{TenantID: tid, TeacherNo: in.TeacherNo, Name: in.Name, Gender: in.Gender, Phone: in.Phone, Email: in.Email, CollegeID: in.CollegeID, Title: in.Title, Status: in.Status}
-		if err := global.GVA_DB.Create(&row).Error; err != nil {
+		if err := global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+			if e := tx.Create(&row).Error; e != nil {
+				return e
+			}
+			return provisionAccount(tx, "teacher", tid, row.ID)
+		}); err != nil {
 			teacherError(c, 409, "创建失败：工号可能重复")
 			return
 		}
@@ -178,6 +184,10 @@ func teacherDelete(c *gin.Context) {
 func InitTeacherRouter(privateGroup *gin.RouterGroup) {
 	group := privateGroup.Group("uni").Use(middleware.TenantAuth())
 	group.GET("/teachers", teacherList)
+	group.GET("/teachers/template", excelTemplate(false))
+	group.GET("/teachers/export", excelExport(false))
+	group.POST("/teachers/import/preview", excelImport(false, false))
+	group.POST("/teachers/import/confirm", excelImport(false, true))
 	group.POST("/teachers", teacherWrite(false))
 	group.PUT("/teachers", teacherWrite(true))
 	group.DELETE("/teachers", teacherDelete)

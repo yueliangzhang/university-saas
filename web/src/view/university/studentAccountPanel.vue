@@ -18,7 +18,7 @@
     </el-card>
     <el-dialog v-model="dialog" :title="reset?'重置学生密码':'开通学生账号'" width="440px">
       <p class="mb-3">{{selected?.name}}（{{selected?.studentNo}}）</p>
-      <el-input v-model="password" type="password" show-password placeholder="设置至少12位的初始密码" autocomplete="new-password"/>
+      <el-alert title="初始密码：123456，首次登录必须修改" type="warning" :closable="false"/>
       <template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">确认</el-button></template>
     </el-dialog>
   </div>
@@ -34,7 +34,7 @@ const dialog=ref(false),reset=ref(false),selected=ref(null),password=ref('')
 const api=(url,method='get',data,params)=>request({url,method,data,params})
 const load=async()=>{loading.value=true;try{const r=await api('/uni/student-accounts','get',undefined,{page:page.value,pageSize:20,keyword:keyword.value});if(r?.code!==0)throw Error(r?.msg||'查询失败');rows.value=r.data?.list||[];total.value=r.data?.total||0}catch(e){ElMessage.error(e.message||'查询失败')}finally{loading.value=false}}
 const openPassword=(row,isReset)=>{selected.value=row;reset.value=isReset;password.value='';dialog.value=true}
-const save=async()=>{if(password.value.length<12){ElMessage.warning('密码至少12位');return}saving.value=true;try{const url=reset.value?'/uni/student-accounts/reset-password':'/uni/student-accounts';const r=await api(url,'post',{studentId:selected.value.studentId,password:password.value});if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('操作成功');dialog.value=false;password.value='';await load()}catch(e){ElMessage.error(e.message||'保存失败')}finally{saving.value=false}}
+const save=async()=>{saving.value=true;try{const url=reset.value?'/uni/student-accounts/reset-password':'/uni/student-accounts';const r=await api(url,'post',{studentId:selected.value.studentId,password:"123456"});if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('操作成功');dialog.value=false;password.value='';await load()}catch(e){ElMessage.error(e.message||'保存失败')}finally{saving.value=false}}
 const toggle=async row=>{try{await ElMessageBox.confirm(`确定${row.status===1?'停用':'启用'}该账号？`,'确认');const r=await api('/uni/student-accounts/status','put',{studentId:row.studentId,status:row.status===1?2:1});if(r?.code!==0)throw Error(r?.msg||'操作失败');await load()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'操作失败')}}
 onMounted(load)
 </script>

@@ -6,7 +6,7 @@
         <h1>学生管理</h1>
         <p>统一管理学生档案、请假审批与登录账号</p>
       </div>
-      <el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button>
+      <div v-if="activeTab === 'profile'" style="display:flex;gap:8px;flex-wrap:wrap"><el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button><ExcelImport kind="students" :filters="{keyword, classId:filterClass||undefined, advisorId:filterAdvisor??undefined}" @imported="search" /></div>
     </div>
 
     <nav class="uni-student-tabs" aria-label="学生管理功能">
@@ -89,6 +89,7 @@
   </main>
 </template>
 <script setup>
+import ExcelImport from './ExcelImport.vue' 
 import { ref, computed, onMounted } from 'vue'
 import StudentLeavePanel from './studentLeavePanel.vue'
 import StudentAccountPanel from './studentAccountPanel.vue'

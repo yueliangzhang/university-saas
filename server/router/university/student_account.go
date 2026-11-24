@@ -9,12 +9,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // V13 student sessions are intentionally separate from GVA administrator JWTs.
@@ -45,7 +47,7 @@ func studentAuthOK(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, gin.H{"code": 0, "msg": "成功", "data": data})
 }
 func studentPasswordValid(s string) bool {
-	return len(s) >= 12 && len(s) <= 72 && strings.TrimSpace(s) == s
+	return utf8.ValidString(s) && utf8.RuneCountInString(s) == 6 && strings.TrimSpace(s) == s && s != "123456"
 }
 func studentHashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
@@ -96,11 +98,11 @@ func studentAccountCreate(c *gin.Context) {
 		StudentID uint64 `json:"studentId"`
 		Password  string `json:"password"`
 	}
-	if c.ShouldBindJSON(&in) != nil || in.StudentID == 0 || !studentPasswordValid(in.Password) {
-		studentAuthError(c, 400, "学生ID或密码不合法（密码至少12位，最多72字节）")
+	if c.ShouldBindJSON(&in) != nil || in.StudentID == 0 {
+		studentAuthError(c, 400, "学生ID不合法")
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte("123456"), bcrypt.DefaultCost)
 	if err != nil {
 		studentAuthError(c, 500, "密码处理失败")
 		return
@@ -113,7 +115,7 @@ func studentAccountCreate(c *gin.Context) {
 		if count != 1 {
 			return gorm.ErrRecordNotFound
 		}
-		return tx.Table("uni_student_accounts").Create(map[string]interface{}{"tenant_id": tid, "student_id": in.StudentID, "password_hash": string(hash), "status": 1}).Error
+		return tx.Table("uni_student_accounts").Create(map[string]interface{}{"tenant_id": tid, "student_id": in.StudentID, "password_hash": string(hash), "status": 1, "must_change_password": true}).Error
 	})
 	if err != nil {
 		studentAuthError(c, 400, "学生不存在、已停用或账号已创建")
@@ -131,17 +133,17 @@ func studentAccountReset(c *gin.Context) {
 		StudentID uint64 `json:"studentId"`
 		Password  string `json:"password"`
 	}
-	if c.ShouldBindJSON(&in) != nil || in.StudentID == 0 || !studentPasswordValid(in.Password) {
+	if c.ShouldBindJSON(&in) != nil || in.StudentID == 0 {
 		studentAuthError(c, 400, "参数不合法")
 		return
 	}
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte("123456"), bcrypt.DefaultCost)
 	if err != nil {
 		studentAuthError(c, 500, "密码处理失败")
 		return
 	}
 	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
-		r := tx.Table("uni_student_accounts").Where("tenant_id=? AND student_id=?", tid, in.StudentID).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now()})
+		r := tx.Table("uni_student_accounts").Where("tenant_id=? AND student_id=?", tid, in.StudentID).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now(), "must_change_password": true, "failed_attempts": 0, "locked_until": nil})
 		if r.Error != nil {
 			return r.Error
 		}
@@ -200,16 +202,29 @@ func studentPortalLogin(c *gin.Context) {
 		return
 	}
 	var row struct {
-		ID           uint64 `gorm:"column:id"`
-		TenantID     uint64 `gorm:"column:tenant_id"`
-		StudentID    uint64 `gorm:"column:student_id"`
-		PasswordHash string `gorm:"column:password_hash"`
+		MustChangePassword bool
+		FailedAttempts     int
+		LockedUntil        *time.Time
+		ID                 uint64 `gorm:"column:id"`
+		TenantID           uint64 `gorm:"column:tenant_id"`
+		StudentID          uint64 `gorm:"column:student_id"`
+		PasswordHash       string `gorm:"column:password_hash"`
 	}
-	err := global.GVA_DB.Table("uni_student_accounts a").Select("a.id,a.tenant_id,a.student_id,a.password_hash").
+	err := global.GVA_DB.Table("uni_student_accounts a").Select("a.id,a.tenant_id,a.student_id,a.password_hash,a.must_change_password,a.failed_attempts,a.locked_until").
 		Joins("JOIN uni_students s ON s.tenant_id=a.tenant_id AND s.id=a.student_id").
 		Joins("JOIN uni_tenants t ON t.id=a.tenant_id").
 		Where("a.tenant_id=? AND s.student_no=? AND a.status=1 AND s.status=1 AND t.status=1", in.TenantID, strings.TrimSpace(in.StudentNo)).Take(&row).Error
+	if err == nil && row.LockedUntil != nil && row.LockedUntil.After(time.Now()) {
+		studentAuthError(c, 429, "登录暂时锁定，请15分钟后重试")
+		return
+	}
 	if err != nil || bcrypt.CompareHashAndPassword([]byte(row.PasswordHash), []byte(in.Password)) != nil {
+		if err == nil {
+			if e := recordLoginFailure("student", row.TenantID, row.ID, row.PasswordHash); e != nil {
+				studentAuthError(c, 500, "登录失败")
+				return
+			}
+		}
 		studentAuthError(c, 401, "高校、学号或密码错误")
 		return
 	}
@@ -221,16 +236,27 @@ func studentPortalLogin(c *gin.Context) {
 	token := base64.RawURLEncoding.EncodeToString(random)
 	expires := time.Now().Add(12 * time.Hour)
 	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		var current struct {
+			PasswordHash string
+			LockedUntil  *time.Time
+			Status       int
+		}
+		if e := tx.Table("uni_student_accounts").Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", row.TenantID, row.ID).Take(&current).Error; e != nil {
+			return e
+		}
+		if current.PasswordHash != row.PasswordHash || current.Status != 1 || (current.LockedUntil != nil && current.LockedUntil.After(time.Now())) {
+			return gorm.ErrRecordNotFound
+		}
 		if e := tx.Table("uni_student_sessions").Create(map[string]interface{}{"tenant_id": row.TenantID, "account_id": row.ID, "token_hash": studentHashToken(token), "expires_at": expires}).Error; e != nil {
 			return e
 		}
-		return tx.Table("uni_student_accounts").Where("id=? AND tenant_id=?", row.ID, row.TenantID).Update("last_login_at", time.Now()).Error
+		return tx.Table("uni_student_accounts").Where("id=? AND tenant_id=?", row.ID, row.TenantID).Updates(map[string]interface{}{"last_login_at": time.Now(), "failed_attempts": 0, "locked_until": nil}).Error
 	})
 	if err != nil {
 		studentAuthError(c, 500, "创建会话失败")
 		return
 	}
-	studentAuthOK(c, gin.H{"token": token, "expiresAt": expires, "studentId": row.StudentID})
+	studentAuthOK(c, gin.H{"mustChangePassword": row.MustChangePassword, "token": token, "expiresAt": expires, "studentId": row.StudentID})
 }
 
 const studentPortalStudentID = "uniPortalStudentID"
@@ -252,14 +278,15 @@ func studentPortalAuth() gin.HandlerFunc {
 			return
 		}
 		var row struct {
-			AccountID uint64 `gorm:"column:account_id"`
-			StudentID uint64 `gorm:"column:student_id"`
-			TenantID  uint64 `gorm:"column:tenant_id"`
+			MustChangePassword bool
+			AccountID          uint64 `gorm:"column:account_id"`
+			StudentID          uint64 `gorm:"column:student_id"`
+			TenantID           uint64 `gorm:"column:tenant_id"`
 		}
-		err := global.GVA_DB.Table("uni_student_sessions sess").Select("sess.account_id,a.student_id,a.tenant_id").
+		err := global.GVA_DB.Table("uni_student_sessions sess").Select("sess.account_id,a.student_id,a.tenant_id,a.must_change_password").
 			Joins("JOIN uni_student_accounts a ON a.tenant_id=sess.tenant_id AND a.id=sess.account_id").
 			Joins("JOIN uni_students s ON s.tenant_id=a.tenant_id AND s.id=a.student_id").
-			Joins("JOIN uni_tenants t ON t.id=a.tenant_id").
+			Joins("JOIN uni_tenants t ON t.id=a.tenant_id,a.must_change_password").
 			Where("sess.token_hash=? AND sess.revoked_at IS NULL AND sess.expires_at>? AND a.status=1 AND s.status=1 AND t.status=1", studentHashToken(token), time.Now()).Take(&row).Error
 		if err != nil {
 			studentAuthError(c, 401, "登录已失效，请重新登录")
@@ -269,6 +296,19 @@ func studentPortalAuth() gin.HandlerFunc {
 		c.Set(studentPortalStudentID, row.StudentID)
 		c.Set(studentPortalTenantID, row.TenantID)
 		c.Set(studentPortalAccountID, row.AccountID)
+		if row.MustChangePassword {
+			path := c.FullPath()
+			if strings.HasSuffix(path, "/me") {
+				c.JSON(200, gin.H{"code": 0, "data": gin.H{"mustChangePassword": true}})
+				c.Abort()
+				return
+			}
+			if !strings.HasSuffix(path, "/change-password") && !strings.HasSuffix(path, "/logout") {
+				studentAuthError(c, 403, "请先修改初始密码")
+				c.Abort()
+				return
+			}
+		}
 		c.Next()
 	}
 }
@@ -298,7 +338,7 @@ func studentPortalChangePassword(c *gin.Context) {
 		NewPassword string `json:"newPassword"`
 	}
 	if c.ShouldBindJSON(&in) != nil || !studentPasswordValid(in.NewPassword) {
-		studentAuthError(c, 400, "新密码至少12位，最多72字节")
+		studentAuthError(c, 400, "新密码必须为6位且不能为123456")
 		return
 	}
 	var account studentAccountRow
@@ -310,13 +350,17 @@ func studentPortalChangePassword(c *gin.Context) {
 		studentAuthError(c, 401, "旧密码错误")
 		return
 	}
+	if in.OldPassword == in.NewPassword {
+		studentAuthError(c, 400, "新旧密码不能相同")
+		return
+	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(in.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		studentAuthError(c, 500, "密码处理失败")
 		return
 	}
 	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
-		r := tx.Table("uni_student_accounts").Where("tenant_id=? AND id=? AND password_hash=?", tid, aid, account.PasswordHash).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now()})
+		r := tx.Table("uni_student_accounts").Where("tenant_id=? AND id=? AND password_hash=?", tid, aid, account.PasswordHash).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now(), "must_change_password": false, "failed_attempts": 0, "locked_until": nil})
 		if r.Error != nil {
 			return r.Error
 		}

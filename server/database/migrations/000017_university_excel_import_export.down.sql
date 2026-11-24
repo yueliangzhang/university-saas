@@ -1,0 +1,1 @@
+DELETE FROM casbin_rule WHERE ptype='p' AND v0='2001' AND (v1,v2) IN (('/uni/students/template','GET'),('/uni/students/export','GET'),('/uni/students/import/preview','POST'),('/uni/students/import/confirm','POST'),('/uni/teachers/template','GET'),('/uni/teachers/export','GET'),('/uni/teachers/import/preview','POST'),('/uni/teachers/import/confirm','POST'));

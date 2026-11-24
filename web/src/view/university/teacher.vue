@@ -15,7 +15,7 @@
         <h1>教师管理</h1>
         <p>管理教师档案、学院归属与在职状态</p>
       </div>
-      <el-button type="primary" @click="openCreate">新增教师</el-button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><el-button type="primary" @click="openCreate">新增教师</el-button><ExcelImport kind="teachers" :filters="{keyword,collegeId:filterCollege||undefined}" @imported="search" /></div>
     </header>
 
     <section class="teacher-panel">
@@ -86,6 +86,7 @@
   </div>
 </template>
 <script setup>
+import ExcelImport from './ExcelImport.vue' 
 import TeacherAccountPanel from './teacherAccountPanel.vue'
 import { ref as uniMergeRef } from 'vue'
 const uniTeacherTab = uniMergeRef('profiles')

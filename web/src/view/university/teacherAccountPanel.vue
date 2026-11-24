@@ -17,7 +17,7 @@
         <el-table-column label="默认辅导员" min-width="280"><template #default="{row}"><el-select :model-value="advisor(row.id)" clearable placeholder="未分配" style="width:min(260px,100%)" @change="v=>setAdvisor(row.id,v)"><el-option v-for="t in teachers.filter(x=>x.status===1)" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id" /></el-select></template></el-table-column>
       </el-table>
     </div>
-    <el-dialog v-model="dialog" :title="reset?'重置教师密码':'开通教师账号'" width="min(450px,95vw)" append-to-body><p>{{selected?.name}}（{{selected?.teacherNo}}）</p><el-input v-model="password" type="password" show-password placeholder="设置至少12位的初始密码"/><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="savePassword">确认</el-button></template></el-dialog>
+    <el-dialog v-model="dialog" :title="reset?'重置教师密码':'开通教师账号'" width="min(450px,95vw)" append-to-body><p>{{selected?.name}}（{{selected?.teacherNo}}）</p><el-alert title="初始密码：123456，首次登录必须修改" type="warning" :closable="false"/><template #footer><el-button @click="dialog=false">取消</el-button><el-button type="primary" :loading="saving" @click="savePassword">确认</el-button></template></el-dialog>
   </div>
 </template>
 <script setup>
@@ -30,7 +30,7 @@ const load=async()=>{loading.value=true;try{const [t,a,c,v]=await Promise.all([a
 const account=id=>accounts.value.find(a=>a.teacherId===id)
 const advisor=id=>advisors.value.find(a=>a.classId===id)?.teacherId||''
 const passwordDialog=(row,isReset)=>{selected.value=row;reset.value=isReset;password.value='';dialog.value=true}
-const savePassword=async()=>{if(password.value.length<12||new TextEncoder().encode(password.value).length>72){ElMessage.warning('密码至少12位，最多72字节');return}saving.value=true;try{await api(reset.value?'/uni/teacher-accounts/reset-password':'/uni/teacher-accounts','post',{teacherId:selected.value.id,password:password.value});ElMessage.success('操作成功');dialog.value=false;password.value='';await load()}catch(e){ElMessage.error(e.message||'操作失败')}finally{saving.value=false}}
+const savePassword=async()=>{saving.value=true;try{await api(reset.value?'/uni/teacher-accounts/reset-password':'/uni/teacher-accounts','post',{teacherId:selected.value.id,password:"123456"});ElMessage.success('操作成功');dialog.value=false;password.value='';await load()}catch(e){ElMessage.error(e.message||'操作失败')}finally{saving.value=false}}
 const toggle=async row=>{const a=account(row.id);try{await ElMessageBox.confirm(`确认${a.status===1?'停用':'启用'}该账号？`,'确认');await api('/uni/teacher-accounts/status','put',{teacherId:row.id,status:a.status===1?2:1});ElMessage.success('已更新');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||'操作失败')}}
 const setAdvisor=async(classId,teacherId)=>{try{await api('/uni/class-advisors','put',{classId,teacherId:teacherId||0});ElMessage.success('分配已更新');await load()}catch(e){ElMessage.error(e.message||'分配失败');await load()}}
 const props=defineProps({mode:{type:String,default:'accounts'}})
