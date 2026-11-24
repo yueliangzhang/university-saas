@@ -55,7 +55,8 @@
 
 /* UNIVERSITY_V17_5_UX_BEGIN */
 /* Opt-in scope: no html/body, root layout height, or scroll locking changes. */
-.uni-ui :is(button, a, input, textarea, select, [tabindex]):focus-visible {
+/* Element Plus already draws the focus border on the input wrapper. */
+.uni-ui :is(button, a, input, textarea, select, [tabindex]):not(.el-input__inner):focus-visible {
   outline: 2px solid #2563eb;
   outline-offset: 3px;
 }
