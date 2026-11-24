@@ -2,14 +2,6 @@
   <div
     class="uni-admin-shell bg-gray-50 text-slate-700 dark:text-slate-500 dark:bg-slate-800 w-screen h-screen"
   >
-    <el-watermark
-      v-if="config.show_watermark && Number(userStore.userInfo.authorityId) !== 2001"
-      :font="font"
-      :z-index="9999"
-      :gap="[180, 150]"
-      class="!absolute !inset-0 !pointer-events-none"
-      :content="userStore.userInfo.nickName"
-    />
     <gva-header />
     <div class="flex flex-row w-full gva-container pt-16 box-border !h-full">
       <gva-aside
@@ -45,7 +37,6 @@
               </transition>
             </div>
           </router-view>
-          <BottomInfo />
         </div>
       </div>
     </div>
@@ -58,9 +49,8 @@
   import GvaHeader from '@/view/layout/header/index.vue'
   import useResponsive from '@/hooks/responsive'
   import GvaTabs from './tabs/index.vue'
-  import BottomInfo from '@/components/bottomInfo/bottomInfo.vue'
   import { emitter } from '@/utils/bus.js'
-  import { ref, onMounted, nextTick, reactive, watchEffect } from 'vue'
+  import { ref, onMounted, nextTick } from 'vue'
   import { useRouter, useRoute } from 'vue-router'
   import { useRouterStore } from '@/pinia/modules/router'
   import { useUserStore } from '@/pinia/modules/user'
@@ -69,20 +59,13 @@
   import '@/style/transition.scss'
   import '@/styles/university-admin-v17-6.css'
   const appStore = useAppStore()
-  const { config, isDark, device } = storeToRefs(appStore)
+  const { config, device } = storeToRefs(appStore)
 
   defineOptions({
     name: 'GvaLayout'
   })
 
   useResponsive(true)
-  const font = reactive({
-    color: 'rgba(0, 0, 0, .15)'
-  })
-
-  watchEffect(() => {
-    font.color = isDark.value ? 'rgba(255,255,255, .15)' : 'rgba(0, 0, 0, .15)'
-  })
 
   const router = useRouter()
   const route = useRoute()

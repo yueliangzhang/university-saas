@@ -11,9 +11,10 @@ import { AddSecret } from './vitePlugin/secret'
 import UnoCSS from '@unocss/vite'
 
 // @see https://cn.vitejs.dev/config/
-export default ({ mode }) => {
+export default ({ command, mode }) => {
   AddSecret('')
   const env = loadEnv(mode, process.cwd())
+  const isDevelopmentServer = command === 'serve' && mode === 'development'
   viteLogo(env)
 
   const timestamp = Date.parse(new Date())
@@ -78,14 +79,14 @@ export default ({ mode }) => {
       }
     },
     plugins: [
-      env.VITE_POSITION === 'open' &&
+      isDevelopmentServer && env.VITE_POSITION === 'open' &&
       vueDevTools({ launchEditor: env.VITE_EDITOR }),
       vuePlugin(),
       svgBuilder(['./src/plugin/', './src/assets/icons/'], base, outDir, 'assets', mode),
       [Banner(`\n Build based on gin-vue-admin \n Time : ${timestamp}`)],
       VueFilePathPlugin('./src/pathInfo.json'),
       UnoCSS(),
-      vueRootValidator()
+      isDevelopmentServer && vueRootValidator()
     ]
   }
   return config
