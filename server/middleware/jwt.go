@@ -53,7 +53,11 @@ func JWTAuth() gin.HandlerFunc {
 		//	c.Abort()
 		//}
 		c.Set("claims", claims)
-		if utils.GetUserAuthorityId(c) == 2001 {
+		if aid := utils.GetUserAuthorityId(c); aid == 2001 || aid == 2002 {
+			expectedRole := "tenant_admin"
+			if aid == 2002 {
+				expectedRole = "leave_monitor"
+			}
 			var rows []struct {
 				Cutoff       int64
 				Status       int
@@ -63,7 +67,7 @@ func JWTAuth() gin.HandlerFunc {
 				Role         string
 			}
 			err := global.GVA_DB.Table("uni_memberships m").Select("m.session_cutoff AS cutoff,m.status,t.status AS tenant_status,u.enable,u.authority_id,m.role").Joins("JOIN uni_tenants t ON t.id=m.tenant_id").Joins("JOIN sys_users u ON u.id=m.user_id AND u.deleted_at IS NULL").Where("m.user_id=?", utils.GetUserID(c)).Scan(&rows).Error
-			if err != nil || len(rows) != 1 || rows[0].Status != 1 || rows[0].TenantStatus != 1 || rows[0].Enable != 1 || rows[0].AuthorityID != 2001 || rows[0].Role != "tenant_admin" || (rows[0].Cutoff > 0 && (claims.IssuedAt == nil || claims.IssuedAt.Unix() <= rows[0].Cutoff)) {
+			if err != nil || len(rows) != 1 || rows[0].Status != 1 || rows[0].TenantStatus != 1 || rows[0].Enable != 1 || rows[0].AuthorityID != uint64(aid) || rows[0].Role != expectedRole || (rows[0].Cutoff > 0 && (claims.IssuedAt == nil || claims.IssuedAt.Unix() <= rows[0].Cutoff)) {
 				response.NoAuth("高校管理员会话已失效，请重新登录", c)
 				utils.ClearToken(c)
 				c.Abort()

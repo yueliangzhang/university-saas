@@ -14,12 +14,13 @@ type AdminApi struct{}
 var adminService = new(universityService.AdminService)
 
 type createAdminRequest struct {
-	TenantID uint64 `json:"tenantId" binding:"required"`
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	NickName string `json:"nickName"`
-	Phone    string `json:"phone"`
-	Email    string `json:"email"`
+	TenantID    uint64 `json:"tenantId" binding:"required"`
+	Username    string `json:"username" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+	NickName    string `json:"nickName"`
+	AuthorityID uint   `json:"authorityId"`
+	Phone       string `json:"phone"`
+	Email       string `json:"email"`
 }
 
 type listAdminRequest struct {
@@ -45,7 +46,7 @@ func (AdminApi) Create(c *gin.Context) {
 		response.FailWithMessage("用户名不能为空", c)
 		return
 	}
-	id, err := adminService.CreateAdmin(r.TenantID, r.Username, r.Password, r.NickName, r.Phone, r.Email)
+	id, err := adminService.CreateAccount(r.TenantID, r.Username, r.Password, r.NickName, r.AuthorityID, r.Phone, r.Email)
 	if err != nil {
 		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) {
 			response.FailWithMessage(err.Error(), c)

@@ -30,6 +30,7 @@ type AdminListItem struct {
 	NickName     string `json:"nickName" gorm:"column:nick_name"`
 	UserEnabled  int    `json:"userEnabled" gorm:"column:user_enabled"`
 	Status       int8   `json:"status" gorm:"column:status"`
+	AuthorityID  uint   `json:"authorityId"`
 	TenantName   string `json:"tenantName"`
 	TenantStatus int8   `json:"tenantStatus"`
 	Phone        string `json:"phone"`
@@ -38,6 +39,18 @@ type AdminListItem struct {
 
 // CreateAdmin is atomic: sys_users + sys_user_authority + uni_memberships.
 func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName string, contact ...string) (uint64, error) {
+	return (AdminService{}).CreateAccount(tenantID, username, password, nickName, 2001, contact...)
+}
+func (AdminService) CreateAccount(tenantID uint64, username, password, nickName string, authorityID uint, contact ...string) (uint64, error) {
+	if authorityID == 0 {
+		authorityID = 2001
+	}
+	role := "tenant_admin"
+	if authorityID == 2002 {
+		role = "leave_monitor"
+	} else if authorityID != 2001 {
+		return 0, errors.New("invalid role")
+	}
 	username = strings.TrimSpace(username)
 	nickName = strings.TrimSpace(nickName)
 	if tenantID == 0 || username == "" || len(username) > 191 || len(password) < 12 || len(password) > 72 || len(nickName) > 191 {
@@ -70,7 +83,7 @@ func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName st
 			return ErrUsernameTaken
 		}
 		var roleCount int64
-		if err := tx.Table("sys_authorities").Where("authority_id = ? AND deleted_at IS NULL", tenantAdminAuthorityID).Count(&roleCount).Error; err != nil {
+		if err := tx.Table("sys_authorities").Where("authority_id = ? AND deleted_at IS NULL", authorityID).Count(&roleCount).Error; err != nil {
 			return err
 		}
 		if roleCount != 1 {
@@ -81,7 +94,7 @@ func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName st
 		user := map[string]interface{}{
 			"uuid": uuid.New().String(), "username": username,
 			"password": utils.BcryptHash(password), "nick_name": nickName,
-			"authority_id": tenantAdminAuthorityID, "enable": 1, "phone": phone, "email": email, "created_at": time.Now(), "updated_at": time.Now(),
+			"authority_id": authorityID, "enable": 1, "phone": phone, "email": email, "created_at": time.Now(), "updated_at": time.Now(),
 		}
 		if err := tx.Table("sys_users").Create(user).Error; err != nil {
 			// DB unique index is authoritative, including concurrent requests.
@@ -99,12 +112,12 @@ func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName st
 		}
 		userID = created.ID
 		if err := tx.Table("sys_user_authority").Create(map[string]interface{}{
-			"sys_user_id": userID, "sys_authority_authority_id": tenantAdminAuthorityID,
+			"sys_user_id": userID, "sys_authority_authority_id": authorityID,
 		}).Error; err != nil {
 			return err
 		}
 		return tx.Create(&universityModel.Membership{
-			TenantID: tenantID, UserID: userID, Role: "tenant_admin", Status: 1,
+			TenantID: tenantID, UserID: userID, Role: role, Status: 1,
 		}).Error
 	})
 	return userID, err
@@ -121,7 +134,7 @@ func (AdminService) ListAdmins(tenantID uint64, page, pageSize int, keywords ...
 	}
 	q := global.GVA_DB.Table("uni_memberships AS m").
 		Joins("JOIN sys_users AS u ON u.id = m.user_id AND u.deleted_at IS NULL").
-		Joins("JOIN uni_tenants AS t ON t.id=m.tenant_id").Where("m.role = ? AND u.authority_id=2001", "tenant_admin")
+		Joins("JOIN uni_tenants AS t ON t.id=m.tenant_id").Where("((m.role='tenant_admin' AND u.authority_id=2001) OR (m.role='leave_monitor' AND u.authority_id=2002))")
 	if tenantID != 0 {
 		q = q.Where("m.tenant_id=?", tenantID)
 	}
@@ -134,7 +147,7 @@ func (AdminService) ListAdmins(tenantID uint64, page, pageSize int, keywords ...
 		return nil, 0, err
 	}
 	var rows []AdminListItem
-	err := q.Select("m.id AS membership_id, m.tenant_id, m.user_id, u.username, u.nick_name, u.enable AS user_enabled, m.status, t.name AS tenant_name, t.status AS tenant_status, COALESCE(u.phone,'') AS phone, COALESCE(u.email,'') AS email").
+	err := q.Select("m.id AS membership_id, m.tenant_id, m.user_id, u.username, u.nick_name, u.authority_id, u.enable AS user_enabled, m.status, t.name AS tenant_name, t.status AS tenant_status, COALESCE(u.phone,'') AS phone, COALESCE(u.email,'') AS email").
 		Order("m.id DESC").Limit(pageSize).Offset((page - 1) * pageSize).Scan(&rows).Error
 	return rows, total, err
 }
@@ -153,7 +166,7 @@ func (AdminService) SetAdminStatus(tenantID, membershipID uint64, status int8) e
 func adminMutation(tid, mid uint64, fn func(*gorm.DB, uint64) error) error {
 	return global.GVA_DB.Transaction(func(tx *gorm.DB) error {
 		var row struct{ UserID uint64 }
-		if err := tx.Table("uni_memberships m").Select("m.user_id").Joins("JOIN sys_users u ON u.id=m.user_id AND u.deleted_at IS NULL").Where("m.id=? AND m.tenant_id=? AND m.role='tenant_admin' AND u.authority_id=2001 AND u.id<>1", mid, tid).Take(&row).Error; err != nil {
+		if err := tx.Table("uni_memberships m").Select("m.user_id").Joins("JOIN sys_users u ON u.id=m.user_id AND u.deleted_at IS NULL").Where("m.id=? AND m.tenant_id=? AND ((m.role='tenant_admin' AND u.authority_id=2001) OR (m.role='leave_monitor' AND u.authority_id=2002)) AND u.id<>1", mid, tid).Take(&row).Error; err != nil {
 			return ErrMemberNotFound
 		}
 		var count int64

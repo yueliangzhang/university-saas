@@ -1,0 +1,18 @@
+START TRANSACTION;
+INSERT INTO sys_authorities(authority_id,authority_name,parent_id,default_router,created_at,updated_at) VALUES(2002,'请假监管员',0,'universityLeaveMonitor',NOW(3),NOW(3));
+INSERT INTO sys_base_menus(created_at,updated_at,parent_id,path,name,component,sort,hidden,title,icon) VALUES(NOW(3),NOW(3),0,'universityLeaveMonitor','universityLeaveMonitor','view/university/leaveMonitor.vue',55,0,'学生请假监管','calendar');
+INSERT INTO sys_authority_menus(sys_base_menu_id,sys_authority_authority_id) SELECT id,2002 FROM sys_base_menus WHERE name='universityLeaveMonitor' AND deleted_at IS NULL;
+INSERT INTO sys_authority_menus(sys_base_menu_id,sys_authority_authority_id) SELECT id,2001 FROM sys_base_menus WHERE name='universityLeaveMonitor' AND deleted_at IS NULL;
+UPDATE sys_base_menus SET title='高校账号管理' WHERE name='universityAdmin' AND deleted_at IS NULL;
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2002','/menu/getMenu','POST'),('p','2002','/user/getUserInfo','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2001','/uni/monitor/leaves','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2001','/uni/monitor/options','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2001','/uni/monitor/export','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2001','/uni/monitor/dashboard','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2001','/uni/monitor/detail','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2002','/uni/monitor/leaves','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2002','/uni/monitor/options','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2002','/uni/monitor/export','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2002','/uni/monitor/dashboard','GET');
+INSERT INTO casbin_rule(ptype,v0,v1,v2) VALUES ('p','2002','/uni/monitor/detail','GET');
+COMMIT;
