@@ -1,7 +1,15 @@
 <template>
   <span class="headerAvatar">
     <template v-if="picType === 'avatar'">
-      <el-avatar :key="avatar" :size="size" :src="avatar" :icon="UserFilled" alt="用户头像" />
+      <el-avatar
+        v-if="avatar && !avatarFailed"
+        :key="avatar"
+        :size="size"
+        :src="avatar"
+        alt="用户头像"
+        @error="avatarFailed = true"
+      />
+      <el-avatar v-else :size="size" :icon="UserFilled" class="default-avatar" aria-label="默认头像" />
     </template>
     <template v-if="picType === 'img'">
       <img :key="avatar" :src="avatar || noAvatarPng" class="avatar" alt="用户头像" @error.once="useDefaultImage" />
@@ -22,7 +30,7 @@
   import { UserFilled } from '@element-plus/icons-vue'
   import { useUserStore } from '@/pinia/modules/user'
   import { getUrl } from '@/utils/image'
-  import { computed } from 'vue'
+  import { computed, ref, watch } from 'vue'
 
   defineOptions({
     name: 'CustomPic'
@@ -50,10 +58,12 @@
   })
 
   const userStore = useUserStore()
+  const avatarFailed = ref(false)
   const avatar = computed(() => {
     const src = props.picSrc === undefined ? userStore.userInfo.headerImg : props.picSrc
     return getUrl(src?.trim() || '') || undefined
   })
+  watch(avatar, () => { avatarFailed.value = false })
   const useDefaultImage = (event) => { event.currentTarget.src = noAvatarPng }
   const file = computed(() => getUrl(props.picSrc))
   const previewSrcList = computed(() => (props.preview ? [file.value] : []))
@@ -65,6 +75,10 @@
     justify-content: center;
     align-items: center;
     margin-right: 8px;
+  }
+  .default-avatar {
+    background: #e8efff;
+    color: #3158a6;
   }
   .file {
     width: 80px;

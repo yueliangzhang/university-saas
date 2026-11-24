@@ -55,7 +55,7 @@
         </div>
       </div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="org-error" />
-      <el-table v-loading="loading" :data="filteredRows" class="org-table" row-key="id" empty-text="暂无符合条件的组织数据">
+      <el-table v-loading="loading" :data="pageRows" class="org-table" row-key="id" empty-text="暂无符合条件的组织数据">
         <el-table-column prop="code" label="组织编码" min-width="130">
           <template #default="{row}"><span class="org-code">{{ row.code }}</span></template>
         </el-table-column>
@@ -79,7 +79,18 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="org-table-footer">显示 {{ filteredRows.length }} 条记录 · {{ labels[tab] }}管理</div>
+      <div v-if="filteredRows.length" class="org-table-footer">
+        <span>第 {{ pageOffset + 1 }}–{{ pageOffset + pageRows.length }} 条</span>
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :pager-count="5"
+          :total="filteredRows.length"
+          layout="sizes, prev, pager, next"
+          aria-label="组织架构列表分页"
+        />
+      </div>
     </section>
 
     <el-dialog v-model="dialog" :title="(editing?'编辑':'新增')+labels[tab]" width="min(520px, 94vw)" append-to-body>
@@ -104,7 +115,7 @@
   </div>
 </template>
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 import ExcelImport from './ExcelImport.vue'
@@ -114,6 +125,8 @@ const loading=ref(false),saving=ref(false),error=ref(''),dialog=ref(false),editi
 const form=ref({})
 const keyword=ref('')
 const statusFilter=ref('')
+const page = ref(1)
+const pageSize = ref(10)
 const overview=ref({colleges:null,majors:null,classes:null})
 const collegeNames=ref({})
 const majorNames=ref({})
@@ -122,6 +135,13 @@ const filteredRows=computed(()=>rows.value.filter(row=>{
   return (!q || String(row.name||'').toLowerCase().includes(q) || String(row.code||'').toLowerCase().includes(q))
     && (statusFilter.value==='' || row.status===Number(statusFilter.value))
 }))
+const pageOffset = computed(() => (page.value - 1) * pageSize.value)
+const pageRows = computed(() => filteredRows.value.slice(pageOffset.value, pageOffset.value + pageSize.value))
+watch([tab, keyword, statusFilter, pageSize], () => { page.value = 1 })
+watch(() => filteredRows.value.length, (total) => {
+  const lastPage = Math.max(1, Math.ceil(total / pageSize.value))
+  if (page.value > lastPage) page.value = lastPage
+})
 const collegeLabel=id=>collegeNames.value[id] || `学院 #${id}`
 const majorLabel=id=>majorNames.value[id] || `专业 #${id}`
 const refreshOverview=async()=>{
@@ -133,11 +153,24 @@ const refreshOverview=async()=>{
     if(r.status==='fulfilled'&&kinds[i]==='majors')majorNames.value=Object.fromEntries(r.value.map(x=>[x.id,x.name]))
   })
 }
-const changeTab=()=>{keyword.value='';statusFilter.value='';load()}
+const changeTab=()=>{keyword.value='';statusFilter.value='';rows.value=[];load()}
 
 const api=(kind,method='get',data,params)=>request({url:`/uni/org/${kind}`,method,data,params})
 const fetchList=async kind=>{const r=await api(kind);if(r?.code!==0)throw new Error(r?.msg||'加载失败');return r.data?.list||[]}
-const load=async()=>{loading.value=true;error.value='';try{rows.value=await fetchList(tab.value)}catch(e){error.value=e.message}finally{loading.value=false}}
+let loadVersion = 0
+const load = async () => {
+  const version = ++loadVersion
+  loading.value = true
+  error.value = ''
+  try {
+    const data = await fetchList(tab.value)
+    if (version === loadVersion) rows.value = data
+  } catch (e) {
+    if (version === loadVersion) error.value = e.message
+  } finally {
+    if (version === loadVersion) loading.value = false
+  }
+}
 const reloadOrganization = () => Promise.all([load(), refreshOverview()])
 const openCreate=async()=>{editing.value=false;form.value={code:'',name:'',status:1,collegeId:null,majorId:null,enrollmentYear:new Date().getFullYear()};await openDialog()}
 const openEdit=async row=>{editing.value=true;form.value={...row};await openDialog()}
@@ -180,7 +213,8 @@ onMounted(async()=>{await Promise.all([load(),refreshOverview()])})
 .org-table{width:calc(100% - 48px);margin:0 24px}
 .org-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#f2f5fa;color:#46607e;padding:5px 9px;border-radius:6px;font-size:12px}
 .org-name{font-size:13px;color:#273a55}
-.org-table-footer{padding:17px 24px;color:#8794a8;font-size:12px}
+.org-table-footer{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:17px 24px;color:#8794a8;font-size:12px}
+.org-table-footer :deep(.el-pagination){flex-wrap:wrap;row-gap:8px;max-width:100%}
 :deep(.org-table th.el-table__cell){background:#f7f9fd!important;color:#5b6d87;font-weight:700;height:48px}
 :deep(.org-table td.el-table__cell){height:54px;border-bottom-color:#eef1f6}
 :deep(.org-table .el-table__inner-wrapper::before){display:none}

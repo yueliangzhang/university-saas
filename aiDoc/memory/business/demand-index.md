@@ -7,6 +7,7 @@
 
 ## Done
 
+- [高校组织架构列表分页](done/university-organization-pagination.md)
 - [高校后台个人信息与默认头像](done/university-personal-profile.md)
 - [师生 Excel 导入错误提示](done/university-excel-import-errors.md)
 - [组织与师生档案查重校验](done/university-record-validation.md)

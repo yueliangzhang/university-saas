@@ -78,9 +78,6 @@
                 <span> 切换为：{{ item.authorityName }} </span>
               </el-dropdown-item>
             </template>
-            <el-dropdown-item v-if="router.hasRoute('person')" icon="avatar" @click="toPerson">
-              个人信息
-            </el-dropdown-item>
             <el-dropdown-item icon="reading-lamp" @click="userStore.LoginOut">
               登 出
             </el-dropdown-item>
@@ -111,9 +108,6 @@
   const isMobile = computed(() => {
     return device.value === 'mobile'
   })
-  const toPerson = () => {
-    router.push({ name: 'person' })
-  }
   const matched = computed(() => route.meta.matched)
 
   const changeUserAuth = async (id) => {
