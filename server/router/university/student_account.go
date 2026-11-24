@@ -193,11 +193,17 @@ func studentAccountStatus(c *gin.Context) {
 }
 func studentPortalLogin(c *gin.Context) {
 	var in struct {
-		TenantID  uint64 `json:"tenantId"`
-		StudentNo string `json:"studentNo"`
-		Password  string `json:"password"`
+		TenantID   uint64 `json:"tenantId"`
+		TenantCode string `json:"tenantCode"`
+		StudentNo  string `json:"studentNo"`
+		Password   string `json:"password"`
 	}
-	if c.ShouldBindJSON(&in) != nil || in.TenantID == 0 || len(in.StudentNo) == 0 || len(in.StudentNo) > 64 || len(in.Password) > 256 {
+	if c.ShouldBindJSON(&in) != nil {
+		studentAuthError(c, 400, "参数不合法")
+		return
+	}
+	code := strings.TrimSpace(in.TenantCode)
+	if (code == "" && in.TenantID == 0) || len(code) > 64 || len(in.StudentNo) == 0 || len(in.StudentNo) > 64 || len(in.Password) > 256 {
 		studentAuthError(c, 400, "参数不合法")
 		return
 	}
@@ -210,10 +216,16 @@ func studentPortalLogin(c *gin.Context) {
 		StudentID          uint64 `gorm:"column:student_id"`
 		PasswordHash       string `gorm:"column:password_hash"`
 	}
-	err := global.GVA_DB.Table("uni_student_accounts a").Select("a.id,a.tenant_id,a.student_id,a.password_hash,a.must_change_password,a.failed_attempts,a.locked_until").
+	query := global.GVA_DB.Table("uni_student_accounts a").Select("a.id,a.tenant_id,a.student_id,a.password_hash,a.must_change_password,a.failed_attempts,a.locked_until").
 		Joins("JOIN uni_students s ON s.tenant_id=a.tenant_id AND s.id=a.student_id").
 		Joins("JOIN uni_tenants t ON t.id=a.tenant_id").
-		Where("a.tenant_id=? AND s.student_no=? AND a.status=1 AND s.status=1 AND t.status=1", in.TenantID, strings.TrimSpace(in.StudentNo)).Take(&row).Error
+		Where("s.student_no=? AND a.status=1 AND s.status=1 AND t.status=1", strings.TrimSpace(in.StudentNo))
+	if code != "" {
+		query = query.Where("t.code=?", code)
+	} else {
+		query = query.Where("a.tenant_id=?", in.TenantID)
+	}
+	err := query.Take(&row).Error
 	if err == nil && row.LockedUntil != nil && row.LockedUntil.After(time.Now()) {
 		studentAuthError(c, 429, "登录暂时锁定，请15分钟后重试")
 		return

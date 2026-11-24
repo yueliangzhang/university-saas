@@ -7,6 +7,7 @@
 
 ## Done
 
+- [师生门户使用高校编号登录](done/university-code-portal-login.md)
 - [高校组织架构列表分页](done/university-organization-pagination.md)
 - [高校后台个人信息与默认头像](done/university-personal-profile.md)
 - [师生 Excel 导入错误提示](done/university-excel-import-errors.md)

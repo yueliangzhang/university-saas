@@ -19,7 +19,7 @@
             <div class="login-title">欢迎回来</div>
             <p class="muted">请使用学校管理员为你开通的学生账号登录</p>
             <el-form label-position="top" @submit.prevent="login">
-              <el-form-item label="高校 ID"><el-input v-model="form.tenantId" size="large" placeholder="请输入高校 ID，例如 1" /></el-form-item>
+              <el-form-item label="高校编号"><el-input v-model.trim="form.tenantCode" maxlength="64" size="large" placeholder="请输入高校编号" /></el-form-item>
               <el-form-item label="学号"><el-input v-model="form.studentNo" size="large" placeholder="请输入学号" autocomplete="username" /></el-form-item>
               <el-form-item label="登录密码"><el-input v-model="form.password" size="large" type="password" show-password autocomplete="current-password" placeholder="请输入密码" /></el-form-item>
               <el-button class="login-button" type="primary" size="large" native-type="submit" :loading="loading">登录学生平台 <el-icon class="ml-8"><Right /></el-icon></el-button>
@@ -148,7 +148,7 @@ import { School, CircleCheck, Clock, Lock, Right, Plus, House, Calendar, User, S
 import axios from 'axios'
 import { downloadLeaveProof } from '@/utils/leaveProof'
 
-const form = ref({ tenantId: '', studentNo: '', password: '' })
+const form = ref({ tenantCode: '', studentNo: '', password: '' })
 const mustChange = ref(false)
 const confirmPassword = ref('')
 const token = ref(sessionStorage.getItem('uni_student_token') || '')
@@ -194,10 +194,10 @@ const loadMe = async () => {
 }
 const login = async () => {
   if (loading.value) return
-  if (!form.value.tenantId || !form.value.studentNo.trim() || !form.value.password) { ElMessage.warning('请填写高校 ID、学号和密码'); return }
+  if (!form.value.tenantCode.trim() || !form.value.studentNo.trim() || !form.value.password) { ElMessage.warning('请填写高校编号、学号和密码'); return }
   loading.value = true
   try {
-    const data = await call('/uni/student-portal/login', 'post', { tenantId: Number(form.value.tenantId), studentNo: form.value.studentNo.trim(), password: form.value.password })
+    const data = await call('/uni/student-portal/login', 'post', { tenantCode: form.value.tenantCode.trim(), studentNo: form.value.studentNo.trim(), password: form.value.password })
     token.value = data.token
     sessionStorage.setItem('uni_student_token', data.token)
     form.value.password = ''

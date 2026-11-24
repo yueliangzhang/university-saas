@@ -78,11 +78,17 @@ func teacherPortalAuth() gin.HandlerFunc {
 }
 func teacherPortalLogin(c *gin.Context) {
 	var in struct {
-		TenantID  uint64 `json:"tenantId"`
-		TeacherNo string `json:"teacherNo"`
-		Password  string `json:"password"`
+		TenantID   uint64 `json:"tenantId"`
+		TenantCode string `json:"tenantCode"`
+		TeacherNo  string `json:"teacherNo"`
+		Password   string `json:"password"`
 	}
-	if c.ShouldBindJSON(&in) != nil || in.TenantID == 0 || len(in.TeacherNo) == 0 || len(in.TeacherNo) > 64 || len(in.Password) > 256 {
+	if c.ShouldBindJSON(&in) != nil {
+		teacherPortalFail(c, 400, "参数不合法")
+		return
+	}
+	code := strings.TrimSpace(in.TenantCode)
+	if (code == "" && in.TenantID == 0) || len(code) > 64 || len(in.TeacherNo) == 0 || len(in.TeacherNo) > 64 || len(in.Password) > 256 {
 		teacherPortalFail(c, 400, "参数不合法")
 		return
 	}
@@ -95,9 +101,15 @@ func teacherPortalLogin(c *gin.Context) {
 		TenantID           uint64 `gorm:"column:tenant_id"`
 		PasswordHash       string `gorm:"column:password_hash"`
 	}
-	err := global.GVA_DB.Table("uni_teacher_accounts a").Select("a.id account_id,a.teacher_id,a.tenant_id,a.password_hash,a.must_change_password,a.failed_attempts,a.locked_until").
+	query := global.GVA_DB.Table("uni_teacher_accounts a").Select("a.id account_id,a.teacher_id,a.tenant_id,a.password_hash,a.must_change_password,a.failed_attempts,a.locked_until").
 		Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").Joins("JOIN uni_tenants u ON u.id=a.tenant_id").
-		Where("a.tenant_id=? AND t.teacher_no=? AND a.status=1 AND t.status=1 AND u.status=1", in.TenantID, strings.TrimSpace(in.TeacherNo)).Take(&row).Error
+		Where("t.teacher_no=? AND a.status=1 AND t.status=1 AND u.status=1", strings.TrimSpace(in.TeacherNo))
+	if code != "" {
+		query = query.Where("u.code=?", code)
+	} else {
+		query = query.Where("a.tenant_id=?", in.TenantID)
+	}
+	err := query.Take(&row).Error
 	if err == nil && row.LockedUntil != nil && row.LockedUntil.After(time.Now()) {
 		teacherPortalFail(c, 429, "登录暂时锁定，请15分钟后重试")
 		return

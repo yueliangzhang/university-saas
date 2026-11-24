@@ -15,7 +15,7 @@
           <h2>欢迎回来</h2>
           <p class="teacher-login-subtitle">请使用学校管理员为你开通的教师账号登录</p>
           <el-form label-position="top" @submit.prevent="login">
-            <el-form-item label="高校 ID"><el-input v-model="loginForm.tenantId" size="large" placeholder="请输入高校 ID，例如 1" inputmode="numeric" /></el-form-item>
+            <el-form-item label="高校编号"><el-input v-model.trim="loginForm.tenantCode" maxlength="64" size="large" placeholder="请输入高校编号" /></el-form-item>
             <el-form-item label="教师工号"><el-input v-model="loginForm.teacherNo" size="large" placeholder="请输入教师工号" autocomplete="username" /></el-form-item>
             <el-form-item label="登录密码"><el-input v-model="loginForm.password" size="large" type="password" show-password autocomplete="current-password" placeholder="请输入密码" /></el-form-item>
             <el-button class="teacher-login-submit" native-type="submit" type="primary" size="large" :loading="busy">登录教师平台 <span aria-hidden="true">→</span></el-button>
@@ -62,7 +62,7 @@ const client=axios.create({baseURL:base,timeout:15000})
 const mustChange = ref(false)
 const confirmPassword = ref('')
 const token=ref(sessionStorage.getItem('uni_teacher_token')||'')
-const loginForm=ref({tenantId:'',teacherNo:'',password:''}),me=ref(null),classes=ref([]),rows=ref([]),total=ref(0),page=ref(1),status=ref('pending'),selectedClassId=ref(''),loading=ref(false),busy=ref(false),refreshing=ref(false),reviewingId=ref(null)
+const loginForm=ref({tenantCode:'',teacherNo:'',password:''}),me=ref(null),classes=ref([]),rows=ref([]),total=ref(0),page=ref(1),status=ref('pending'),selectedClassId=ref(''),loading=ref(false),busy=ref(false),refreshing=ref(false),reviewingId=ref(null)
 const studentRows=ref([]),studentPage=ref(1),studentTotal=ref(0),studentTotalAll=ref(null),studentClass=ref(null),studentLoading=ref(false)
 const loadStudents=async()=>{const session=token.value;if(!session)return;studentLoading.value=true;try{const d=await call('/students','get',undefined,{page:studentPage.value,pageSize:20,classId:studentClass.value||undefined});if(token.value!==session)return;studentRows.value=d?.list||[];studentTotal.value=d?.total||0;if(!studentClass.value)studentTotalAll.value=studentTotal.value;else{const all=await call('/students','get',undefined,{page:1,pageSize:1});if(token.value===session)studentTotalAll.value=all?.total??0}}catch(e){if(token.value===session){studentRows.value=[];studentTotal.value=0;studentTotalAll.value=null;ElMessage.error(error(e))}}finally{studentLoading.value=false}}
 const changeDialog=ref(false),oldPassword=ref(''),newPassword=ref('')
@@ -73,7 +73,7 @@ const call=async(url,method='get',data,params)=>{const r=await client({url:`/uni
 const clear=()=>{mustChange.value=false;confirmPassword.value="";oldPassword.value="";newPassword.value="";token.value='';sessionStorage.removeItem('uni_teacher_token');me.value=null;classes.value=[];rows.value=[];total.value=0;selectedClassId.value='';studentRows.value=[];studentTotal.value=0;studentTotalAll.value=null;studentPage.value=1;studentClass.value=null}
 const loadLeaves=async()=>{if(!token.value)return;loading.value=true;try{const d=await call('/leaves','get',undefined,{page:page.value,pageSize:10,status:status.value,...(selectedClassId.value?{classId:selectedClassId.value}:{})});rows.value=d?.list||[];total.value=d?.total||0}catch(e){ElMessage.error(error(e))}finally{loading.value=false}}
 const refresh=async()=>{if(!token.value||refreshing.value)return;refreshing.value=true;try{const profile=await call('/me');mustChange.value=!!profile.mustChangePassword;if(mustChange.value)return;me.value=profile;const d=await call('/classes');classes.value=d?.list||[];if(selectedClassId.value&&!classes.value.some(cl=>String(cl.id)===selectedClassId.value)){selectedClassId.value='';page.value=1}if(studentClass.value&&!classes.value.some(cl=>cl.id===studentClass.value)){studentClass.value=null;studentPage.value=1}await Promise.all([loadLeaves(),loadStudents()])}catch(e){ElMessage.error(error(e));if(e.response?.status===401)clear()}finally{refreshing.value=false}}
-const login=async()=>{if(busy.value)return;if(!Number.isInteger(Number(loginForm.value.tenantId))||Number(loginForm.value.tenantId)<=0||!loginForm.value.teacherNo.trim()||!loginForm.value.password){ElMessage.warning('请填写有效的高校 ID、教师工号和密码');return}busy.value=true;try{const d=await call('/login','post',{tenantId:Number(loginForm.value.tenantId),teacherNo:loginForm.value.teacherNo,password:loginForm.value.password});token.value=d.token;sessionStorage.setItem('uni_teacher_token',d.token);loginForm.value.password='';await refresh()}catch(e){ElMessage.error(error(e))}finally{busy.value=false}}
+const login=async()=>{if(busy.value)return;if(!loginForm.value.tenantCode.trim()||!loginForm.value.teacherNo.trim()||!loginForm.value.password){ElMessage.warning('请填写有效的高校编号、教师工号和密码');return}busy.value=true;try{const d=await call('/login','post',{tenantCode:loginForm.value.tenantCode.trim(),teacherNo:loginForm.value.teacherNo,password:loginForm.value.password});token.value=d.token;sessionStorage.setItem('uni_teacher_token',d.token);loginForm.value.password='';await refresh()}catch(e){ElMessage.error(error(e))}finally{busy.value=false}}
 const logout=async()=>{try{await call('/logout','post',{})}catch(e){}finally{clear()}}
 const downloadProof = async (row, index) => {
   try {
