@@ -23,6 +23,7 @@
 
 <script setup>
   import { useUserStore } from '@/pinia/modules/user'
+  import { useRouterStore } from '@/pinia/modules/router'
   import { useRouter } from 'vue-router'
   import { emitter } from '@/utils/bus'
 
@@ -31,10 +32,12 @@
   })
 
   const userStore = useUserStore()
+  const routerStore = useRouterStore()
   const router = useRouter()
-  const toDashboard = () => {
+  const toDashboard = async () => {
     try {
-      router.push({ name: userStore.userInfo.authority.defaultRouter })
+      const home = routerStore.getHomeRoute(userStore.userInfo.authority.defaultRouter)
+      await router.push(home || { name: 'Login' })
     } catch (error) {
         emitter.emit('show-error', {
         code: '401',

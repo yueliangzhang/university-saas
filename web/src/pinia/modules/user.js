@@ -86,15 +86,20 @@ export const useUserStore = defineStore('user', () => {
         router.addRoute(asyncRouter)
       })
 
-      if(router.currentRoute.value.query.redirect) {
-        await router.replace(router.currentRoute.value.query.redirect)
-        return true
+      const redirect = router.currentRoute.value.query.redirect
+      if (typeof redirect === 'string' && redirect.startsWith('/') && !redirect.startsWith('//')) {
+        const target = router.resolve(redirect)
+        if (target.name && target.name !== 'Reload' && typeof routerStore.routeMap[target.name]?.component === 'function') {
+          await router.replace(target.fullPath)
+          return true
+        }
       }
 
-      if (!router.hasRoute(userInfo.value.authority.defaultRouter)) {
+      const home = routerStore.getHomeRoute(userInfo.value.authority.defaultRouter)
+      if (!home) {
         ElMessage.error('不存在可以登陆的首页，请联系管理员进行配置')
       } else {
-        await router.replace({ name: userInfo.value.authority.defaultRouter })
+        await router.replace(home)
       }
 
       const isWindows = /windows/i.test(navigator.userAgent)

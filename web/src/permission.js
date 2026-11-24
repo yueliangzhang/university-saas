@@ -181,9 +181,8 @@ router.beforeEach(async (to, from) => {
       if(!routerStore.asyncRouterFlag){
         await setupRouter(userStore)
       }
-      if(userStore.userInfo.authority.defaultRouter){
-        return { name: userStore.userInfo.authority.defaultRouter }
-      }
+      const home = routerStore.getHomeRoute(userStore.userInfo.authority.defaultRouter)
+      if (home) return home
     }
     return  true
   }

@@ -4,6 +4,7 @@ import { asyncMenu } from '@/api/menu'
 import { defineStore } from 'pinia'
 import { ref, watchEffect } from 'vue'
 import pathInfo from '@/pathInfo.json'
+import router from '@/router'
 import {useRoute} from "vue-router";
 import {config} from "@/core/config.js";
 
@@ -154,6 +155,15 @@ export const useRouterStore = defineStore('router', () => {
   })
 
   const routeMap = {}
+  const getHomeRoute = (defaultName) => {
+    const isAvailable = (name) => name && name !== 'Reload' &&
+      router.hasRoute(name) && typeof routeMap[name]?.component === 'function'
+
+    if (isAvailable(defaultName)) return { name: defaultName }
+    const home = Object.values(routeMap).find((item) => !item.hidden && isAvailable(item.name))
+    return home ? { name: home.name } : null
+  }
+
   // 从后台获取动态路由
   const SetAsyncRouter = async () => {
     
@@ -213,6 +223,7 @@ export const useRouterStore = defineStore('router', () => {
     keepAliveRouters,
     asyncRouterFlag,
     SetAsyncRouter,
+    getHomeRoute,
     routeMap,
     handleKeepAlive
   }
