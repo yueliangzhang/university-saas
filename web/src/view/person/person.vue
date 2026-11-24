@@ -13,10 +13,13 @@
           <!-- 左侧头像 -->
           <div class="profile-avatar-wrapper flex-shrink-0 mx-auto lg:mx-0">
             <SelectImage
-                v-model="userStore.userInfo.headerImg"
+                v-if="!isUniversityAccount"
+                :model-value="userStore.userInfo.headerImg"
                 file-type="image"
                 rounded
+                @update:model-value="saveAvatar"
             />
+            <CustomPic v-else :size="112" />
           </div>
 
           <!-- 右侧信息 -->
@@ -358,15 +361,17 @@
 
 <script setup>
   import { setSelfInfo, changePassword } from '@/api/user.js'
-  import { reactive, ref, watch } from 'vue'
+  import { computed, reactive, ref } from 'vue'
   import { ElMessage } from 'element-plus'
   import { useUserStore } from '@/pinia/modules/user'
   import SelectImage from '@/components/selectImage/selectImage.vue'
+  import CustomPic from '@/components/customPic/index.vue'
   defineOptions({
     name: 'Person'
   })
 
   const userStore = useUserStore()
+  const isUniversityAccount = computed(() => [2001, 2002].includes(Number(userStore.userInfo.authorityId)))
   const modifyPwdForm = ref(null)
   const showPassword = ref(false)
   const pwdModify = ref({})
@@ -511,7 +516,7 @@
     }
   }
 
-  watch(() => userStore.userInfo.headerImg, async(val) => {
+  const saveAvatar = async (val) => {
     const res = await setSelfInfo({ headerImg: val })
     if (res.code === 0) {
       userStore.ResetUserInfo({ headerImg: val })
@@ -520,7 +525,7 @@
         message: '设置成功',
       })
     }
-  })
+  }
 
   // 添加活动数据
   const activities = [

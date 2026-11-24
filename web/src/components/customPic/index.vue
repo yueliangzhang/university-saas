@@ -1,12 +1,10 @@
 <template>
   <span class="headerAvatar">
     <template v-if="picType === 'avatar'">
-      <el-avatar v-if="userStore.userInfo.headerImg" :size="30" :src="avatar" />
-      <el-avatar v-else :size="30" :src="noAvatar" />
+      <el-avatar :key="avatar" :size="size" :src="avatar" :icon="UserFilled" alt="用户头像" />
     </template>
     <template v-if="picType === 'img'">
-      <img v-if="userStore.userInfo.headerImg" :src="avatar" class="avatar" />
-      <img v-else :src="noAvatar" class="avatar" />
+      <img :key="avatar" :src="avatar || noAvatarPng" class="avatar" alt="用户头像" @error.once="useDefaultImage" />
     </template>
     <template v-if="picType === 'file'">
       <el-image
@@ -21,8 +19,10 @@
 
 <script setup>
   import noAvatarPng from '@/assets/noBody.png'
+  import { UserFilled } from '@element-plus/icons-vue'
   import { useUserStore } from '@/pinia/modules/user'
-  import { computed, ref } from 'vue'
+  import { getUrl } from '@/utils/image'
+  import { computed } from 'vue'
 
   defineOptions({
     name: 'CustomPic'
@@ -37,7 +37,11 @@
     picSrc: {
       type: String,
       required: false,
-      default: ''
+      default: undefined
+    },
+    size: {
+      type: Number,
+      default: 30
     },
     preview: {
       type: Boolean,
@@ -45,33 +49,13 @@
     }
   })
 
-  const path = ref(import.meta.env.VITE_BASE_API + '/')
-  const noAvatar = ref(noAvatarPng)
-
   const userStore = useUserStore()
-
   const avatar = computed(() => {
-    if (props.picSrc === '') {
-      if (
-        userStore.userInfo.headerImg !== '' &&
-        userStore.userInfo.headerImg.slice(0, 4) === 'http'
-      ) {
-        return userStore.userInfo.headerImg
-      }
-      return path.value + userStore.userInfo.headerImg
-    } else {
-      if (props.picSrc !== '' && props.picSrc.slice(0, 4) === 'http') {
-        return props.picSrc
-      }
-      return path.value + props.picSrc
-    }
+    const src = props.picSrc === undefined ? userStore.userInfo.headerImg : props.picSrc
+    return getUrl(src?.trim() || '') || undefined
   })
-  const file = computed(() => {
-    if (props.picSrc && props.picSrc.slice(0, 4) !== 'http') {
-      return path.value + props.picSrc
-    }
-    return props.picSrc
-  })
+  const useDefaultImage = (event) => { event.currentTarget.src = noAvatarPng }
+  const file = computed(() => getUrl(props.picSrc))
   const previewSrcList = computed(() => (props.preview ? [file.value] : []))
 </script>
 

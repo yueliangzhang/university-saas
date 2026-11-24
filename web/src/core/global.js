@@ -15,14 +15,18 @@ const createIconComponent = (name) => ({
   }
 })
 
-const registerIcons = async (app) => {
-  const iconModules = import.meta.glob('@/assets/icons/**/*.svg') // 系统目录 svg 图标
-  const pluginIconModules = import.meta.glob(
-    '@/plugin/**/assets/icons/**/*.svg'
-  ) // 插件目录 svg 图标
-  const mergedIconModules = Object.assign({}, iconModules, pluginIconModules) // 合并所有 svg 图标
+const registerIcons = (app) => {
+  const iconModules = import.meta.glob(
+    ['/src/assets/icons/**/*.svg', '/src/plugin/**/assets/icons/**/*.svg'],
+    { eager: true, query: '?raw', import: 'default' }
+  )
+  const namespace = 'http://www.w3.org/2000/svg'
+  const sprite = document.createElementNS(namespace, 'svg')
+  sprite.setAttribute('aria-hidden', 'true')
+  sprite.style.display = 'none'
+  const parser = new DOMParser()
   let allKeys = []
-  for (const path in mergedIconModules) {
+  for (const [path, markup] of Object.entries(iconModules)) {
     let pluginName = ''
     if (path.startsWith('/src/plugin/')) {
       pluginName = `${path.split('/')[3]}-`
@@ -37,6 +41,19 @@ const registerIcons = async (app) => {
       continue
     }
     const key = `${pluginName}${iconName}`
+    const svg = parser.parseFromString(markup, 'image/svg+xml').documentElement
+    if (svg.localName !== 'svg') {
+      console.error(`Invalid local SVG: ${path}`)
+      continue
+    }
+    const symbol = document.createElementNS(namespace, 'symbol')
+    symbol.id = key
+    for (const attribute of svg.attributes) {
+      if (['id', 'width', 'height', 'xmlns', 'xmlns:xlink'].includes(attribute.name)) continue
+      symbol.setAttributeNS(attribute.namespaceURI, attribute.name, attribute.value)
+    }
+    symbol.append(...Array.from(svg.childNodes, node => document.importNode(node, true)))
+    sprite.append(symbol)
     const iconComponent = createIconComponent(key)
     config.logs.push({
       key: key,
@@ -47,6 +64,7 @@ const registerIcons = async (app) => {
     // 开发模式下列出所有 svg 图标，方便开发者直接查找复制使用
     allKeys.push(key)
   }
+  document.body.prepend(sprite)
 
   import.meta.env.MODE == 'development' &&
     console.log(`所有可用的本地图标: ${allKeys.join(', ')}`)
