@@ -50,7 +50,7 @@ func teacherPortalAuth() gin.HandlerFunc {
 		err := global.GVA_DB.Table("uni_teacher_sessions s").Select("s.account_id,a.teacher_id,a.tenant_id,a.must_change_password").
 			Joins("JOIN uni_teacher_accounts a ON a.tenant_id=s.tenant_id AND a.id=s.account_id").
 			Joins("JOIN uni_teachers t ON t.tenant_id=a.tenant_id AND t.id=a.teacher_id").
-			Joins("JOIN uni_tenants u ON u.id=a.tenant_id,a.must_change_password").
+			Joins("JOIN uni_tenants u ON u.id=a.tenant_id").
 			Where("s.token_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND a.status=1 AND t.status=1 AND u.status=1", studentHashToken(token), time.Now()).Take(&row).Error
 		if err != nil {
 			teacherPortalFail(c, 401, "教师登录已失效")
@@ -331,13 +331,22 @@ func teacherLeaveList(c *gin.Context) {
 		EndAt       time.Time `json:"endAt"`
 		Status      string    `json:"status"`
 		ReviewNote  string    `json:"reviewNote"`
+		HasProof    bool      `json:"hasProof"`
+		ProofCount  int       `json:"proofCount"`
 	}
-	if err := q.Select("l.id,l.student_id,s.name student_name,s.student_no,s.class_id,cl.name class_name,l.leave_type,l.reason,l.start_at,l.end_at,l.status,l.review_note").Order("l.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
+	if err := q.Select("l.id,l.student_id,s.name student_name,s.student_no,s.class_id,cl.name class_name,l.leave_type,l.reason,l.start_at,l.end_at,l.status,l.review_note, " + leaveProofColumns).Order("l.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		teacherPortalFail(c, 500, "查询失败")
 		return
 	}
 	teacherPortalOK(c, gin.H{"list": rows, "total": total})
 }
+func teacherLeaveProof(c *gin.Context) {
+	downloadLeaveProof(c, func(q *gorm.DB) *gorm.DB {
+		return q.Joins("JOIN uni_students s ON s.tenant_id=l.tenant_id AND s.id=l.student_id").
+			Where("l.tenant_id=? AND s.advisor_id=?", c.GetUint64(teacherTenantKey), c.GetUint64(teacherIDKey))
+	})
+}
+
 func teacherLeaveReview(c *gin.Context) {
 	tid := c.GetUint64(teacherTenantKey)
 	teacher := c.GetUint64(teacherIDKey)
@@ -545,5 +554,6 @@ func InitTeacherPortalRouter(publicGroup *gin.RouterGroup) {
 	protected.GET("/classes", teacherAssignedClasses)
 	protected.GET("/students", teacherAssignedStudents)
 	protected.GET("/leaves", teacherLeaveList)
+	protected.GET("/leaves/:id/proof", teacherLeaveProof)
 	protected.POST("/leaves/review", teacherLeaveReview)
 }

@@ -30,7 +30,21 @@
       <el-card shadow="never" class="section"><template #header><b>我的负责班级</b></template><el-empty v-if="!classes.length" description="管理员尚未分配学生" :image-size="72"/><el-tag v-for="cl in classes" :key="cl.id" style="margin:4px">{{cl.name}}（{{cl.code}}）</el-tag></el-card>
       <el-card shadow="never" class="section"><template #header><div class="section-header"><b>我负责的学生</b><el-select v-model="studentClass" clearable placeholder="全部班级" style="width:190px" @change="studentPage=1;loadStudents()"><el-option v-for="cl in classes" :key="cl.id" :label="cl.name" :value="cl.id"/></el-select></div></template><el-table :data="studentRows" v-loading="studentLoading" empty-text="暂无负责学生"><el-table-column prop="studentNo" label="学号" min-width="110"/><el-table-column prop="name" label="姓名" min-width="110"/><el-table-column prop="className" label="班级" min-width="130"/><el-table-column label="状态" width="100"><template #default="{row}">{{row.status===1?'在读':'停用'}}</template></el-table-column></el-table><el-pagination class="pager" v-model:current-page="studentPage" :page-size="20" :total="studentTotal" layout="total,prev,pager,next" @current-change="loadStudents"/></el-card>
       <el-card shadow="never" class="section"><template #header><div class="section-header"><b>学生请假审批</b><div class="leave-filters"><el-select v-model="selectedClassId" placeholder="全部负责班级" clearable style="width:190px" @change="search"><el-option label="全部负责班级" value=""/><el-option v-for="cl in classes" :key="cl.id" :label="cl.name + (cl.code ? `（${cl.code}）` : '')" :value="String(cl.id)"/></el-select><el-select v-model="status" style="width:140px" @change="search"><el-option label="待审批" value="pending"/><el-option label="全部记录" value=""/><el-option label="已通过" value="approved"/><el-option label="已驳回" value="rejected"/></el-select></div></div></template>
-        <el-table v-loading="loading" :data="rows" style="width:100%" empty-text="当前没有符合条件的请假记录"><el-table-column prop="studentName" label="学生" min-width="95"/><el-table-column prop="studentNo" label="学号" min-width="105"/><el-table-column prop="className" label="所属班级" min-width="125"><template #default="{row}">{{row.className || '—'}}</template></el-table-column><el-table-column label="类型" width="75"><template #default="{row}">{{types[row.leaveType]||row.leaveType}}</template></el-table-column><el-table-column label="时间" min-width="180"><template #default="{row}">{{fmt(row.startAt)}} 至 {{fmt(row.endAt)}}</template></el-table-column><el-table-column prop="reason" label="请假原因" min-width="140" show-overflow-tooltip/><el-table-column label="状态" width="95"><template #default="{row}"><el-tag :type="colors[row.status]||'info'">{{statuses[row.status]||row.status}}</el-tag></template></el-table-column><el-table-column prop="reviewNote" label="审批备注" min-width="120" show-overflow-tooltip/><el-table-column label="操作" width="140" fixed="right"><template #default="{row}"><template v-if="row.status==='pending'"><el-button type="success" link :loading="reviewingId===row.id" :disabled="reviewingId!==null" @click="review(row,'approved')">通过</el-button><el-button type="danger" link :disabled="reviewingId!==null" @click="review(row,'rejected')">驳回</el-button></template></template></el-table-column></el-table>
+        <el-table v-loading="loading" :data="rows" style="width:100%" empty-text="当前没有符合条件的请假记录"><el-table-column prop="studentName" label="学生" min-width="95"/><el-table-column prop="studentNo" label="学号" min-width="105"/><el-table-column prop="className" label="所属班级" min-width="125"><template #default="{row}">{{row.className || '—'}}</template></el-table-column><el-table-column label="类型" width="75"><template #default="{row}">{{types[row.leaveType]||row.leaveType}}</template></el-table-column><el-table-column label="时间" min-width="180"><template #default="{row}">{{fmt(row.startAt)}} 至 {{fmt(row.endAt)}}</template></el-table-column><el-table-column prop="reason" label="请假原因" min-width="140" show-overflow-tooltip/>
+          <el-table-column label="证明" width="105">
+            <template #default="{row}">
+              <el-dropdown v-if="row.hasProof" trigger="click" @command="index => downloadProof(row, index)">
+                <el-button type="primary" link>下载证明</el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-for="index in (row.proofCount ?? 1)" :key="index" :command="index">附件 {{ index }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <span v-else>—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="95"><template #default="{row}"><el-tag :type="colors[row.status]||'info'">{{statuses[row.status]||row.status}}</el-tag></template></el-table-column><el-table-column prop="reviewNote" label="审批备注" min-width="120" show-overflow-tooltip/><el-table-column label="操作" width="140" fixed="right"><template #default="{row}"><template v-if="row.status==='pending'"><el-button type="success" link :loading="reviewingId===row.id" :disabled="reviewingId!==null" @click="review(row,'approved')">通过</el-button><el-button type="danger" link :disabled="reviewingId!==null" @click="review(row,'rejected')">驳回</el-button></template></template></el-table-column></el-table>
         <el-pagination class="pager" v-model:current-page="page" :page-size="10" :total="total" layout="total,prev,pager,next" @current-change="loadLeaves" />
       </el-card>
       <el-card shadow="never" class="section"><template #header><b>账号安全</b></template><el-button @click="changeDialog=true">修改密码</el-button></el-card>
@@ -42,6 +56,7 @@
 import {ref,onMounted} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import axios from 'axios'
+import { downloadLeaveProof } from '@/utils/leaveProof'
 const base=(import.meta.env.VITE_BASE_API||'/api').replace(/\/$/,'')
 const client=axios.create({baseURL:base,timeout:15000})
 const mustChange = ref(false)
@@ -60,6 +75,13 @@ const loadLeaves=async()=>{if(!token.value)return;loading.value=true;try{const d
 const refresh=async()=>{if(!token.value||refreshing.value)return;refreshing.value=true;try{const profile=await call('/me');mustChange.value=!!profile.mustChangePassword;if(mustChange.value)return;me.value=profile;const d=await call('/classes');classes.value=d?.list||[];if(selectedClassId.value&&!classes.value.some(cl=>String(cl.id)===selectedClassId.value)){selectedClassId.value='';page.value=1}if(studentClass.value&&!classes.value.some(cl=>cl.id===studentClass.value)){studentClass.value=null;studentPage.value=1}await Promise.all([loadLeaves(),loadStudents()])}catch(e){ElMessage.error(error(e));if(e.response?.status===401)clear()}finally{refreshing.value=false}}
 const login=async()=>{if(busy.value)return;if(!Number.isInteger(Number(loginForm.value.tenantId))||Number(loginForm.value.tenantId)<=0||!loginForm.value.teacherNo.trim()||!loginForm.value.password){ElMessage.warning('请填写有效的高校 ID、教师工号和密码');return}busy.value=true;try{const d=await call('/login','post',{tenantId:Number(loginForm.value.tenantId),teacherNo:loginForm.value.teacherNo,password:loginForm.value.password});token.value=d.token;sessionStorage.setItem('uni_teacher_token',d.token);loginForm.value.password='';await refresh()}catch(e){ElMessage.error(error(e))}finally{busy.value=false}}
 const logout=async()=>{try{await call('/logout','post',{})}catch(e){}finally{clear()}}
+const downloadProof = async (row, index) => {
+  try {
+    await downloadLeaveProof(client, `/uni/teacher-portal/leaves/${row.id}/proof?index=${index}`, token.value, `${row.id}-${index}`)
+  } catch {
+    ElMessage.error('下载证明失败，请重试')
+  }
+}
 const search=()=>{page.value=1;loadLeaves()}
 const review=async(row,action)=>{if(reviewingId.value!==null)return;try{const result=await ElMessageBox.prompt(action==='rejected'?'请填写驳回原因':'审批备注（可留空）',action==='rejected'?'驳回申请':'通过申请',{inputValidator:v=>action!=='rejected'||!!v?.trim(),inputErrorMessage:'驳回原因不能为空'});reviewingId.value=row.id;try{await call('/leaves/review','post',{id:row.id,action,note:result.value||''});ElMessage.success('审批完成');await loadLeaves()}finally{reviewingId.value=null}}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(error(e))}}
 const changePassword=async()=>{if(busy.value)return;const n=new TextEncoder().encode(newPassword.value).length;if(!oldPassword.value||Array.from(newPassword.value).length!==6||newPassword.value==="123456"||(mustChange.value&&confirmPassword.value!==newPassword.value)){ElMessage.warning('请输入旧密码，新密码长度须为 6位');return}busy.value=true;try{await call('/change-password','post',{oldPassword:oldPassword.value,newPassword:newPassword.value});ElMessage.success('密码已修改，请重新登录');changeDialog.value=false;oldPassword.value='';newPassword.value='';clear()}catch(e){ElMessage.error(error(e))}finally{busy.value=false}}

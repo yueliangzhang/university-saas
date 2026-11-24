@@ -82,6 +82,19 @@
                   <el-table-column prop="reason" label="请假原因" min-width="170" show-overflow-tooltip />
                   <el-table-column label="审批状态" width="105"><template #default="{row}"><el-tag :type="statusType(row.status)" round>{{leaveStatuses[row.status]||row.status}}</el-tag></template></el-table-column>
                   <el-table-column prop="reviewNote" label="审批备注" min-width="150" show-overflow-tooltip><template #default="{row}">{{row.reviewNote||'—'}}</template></el-table-column>
+                  <el-table-column label="证明" width="105">
+                    <template #default="{row}">
+                      <el-dropdown v-if="row.hasProof" trigger="click" @command="index => downloadProof(row, index)">
+                        <el-button type="primary" link>下载证明</el-button>
+                        <template #dropdown>
+                          <el-dropdown-menu>
+                            <el-dropdown-item v-for="index in (row.proofCount ?? 1)" :key="index" :command="index">附件 {{ index }}</el-dropdown-item>
+                          </el-dropdown-menu>
+                        </template>
+                      </el-dropdown>
+                      <span v-else>—</span>
+                    </template>
+                  </el-table-column>
                   <el-table-column label="操作" width="85" fixed="right"><template #default="{row}"><el-button v-if="row.status==='pending'" type="danger" link @click="cancelLeave(row)">撤销</el-button><span v-else class="muted">—</span></template></el-table-column>
                 </el-table>
                 <div class="pagination"><el-pagination v-model:current-page="leavePage" :page-size="10" :total="leaveTotal" layout="total, prev, pager, next" @current-change="loadLeaves" /></div>
@@ -111,6 +124,16 @@
           <el-form-item label="开始时间" required><el-date-picker v-model="leaveForm.startAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择开始时间"/></el-form-item>
           <el-form-item label="结束时间" required><el-date-picker v-model="leaveForm.endAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择结束时间"/></el-form-item>
           <el-form-item label="请假原因" required><el-input v-model="leaveForm.reason" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="请简要说明请假原因"/></el-form-item>
+          <el-form-item label="证明文件（选填）">
+            <input type="file" multiple aria-label="证明文件（选填）" accept=".pdf,.jpg,.jpeg,.png" :disabled="leaveSaving" @change="selectProof" />
+            <div class="muted w-full">最多 5 个文件，支持 PDF、JPG、PNG，每个不超过 5 MB</div>
+            <ul v-if="leaveProofs.length" class="w-full">
+              <li v-for="(file, index) in leaveProofs" :key="index" class="flex items-center gap-2">
+                <span class="min-w-0 break-all">{{ file.name }}</span>
+                <el-button type="danger" link :disabled="leaveSaving" :aria-label="'移除 ' + file.name" @click="leaveProofs.splice(index, 1)">移除</el-button>
+              </li>
+            </ul>
+          </el-form-item>
         </el-form>
         <template #footer><el-button @click="leaveDialog=false">取消</el-button><el-button type="primary" :loading="leaveSaving" :disabled="leaveSaving" @click="submitLeave">提交申请</el-button></template>
       </el-dialog>
@@ -123,6 +146,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { School, CircleCheck, Clock, Lock, Right, Plus, House, Calendar, User, SwitchButton, Refresh, Files, CircleClose } from '@element-plus/icons-vue'
 import axios from 'axios'
+import { downloadLeaveProof } from '@/utils/leaveProof'
 
 const form = ref({ tenantId: '', studentNo: '', password: '' })
 const mustChange = ref(false)
@@ -209,6 +233,9 @@ const leavePage = ref(1)
 const leaveLoading = ref(false)
 const leaveSaving = ref(false)
 const leaveDialog = ref(false)
+const leaveProofs = ref([])
+const maxProofCount = 5
+const maxProofSize = 5 * 1024 * 1024
 const leaveForm = ref({ leaveType: 'personal', reason: '', startAt: '', endAt: '' })
 const statusFilter = ref('all')
 const filteredLeaveRows = computed(() => statusFilter.value === 'all' ? leaveRows.value : leaveRows.value.filter(r => r.status === statusFilter.value))
@@ -231,14 +258,58 @@ const loadLeaves = async () => {
   finally { leaveLoading.value = false }
 }
 const refreshLeaves = () => { loadLeaves() }
-const openLeaveDialog = () => { leaveForm.value = { leaveType: 'personal', reason: '', startAt: '', endAt: '' }; leaveDialog.value = true }
+const selectProof = event => {
+  const files = Array.from(event.target.files)
+  event.target.value = ''
+  if (leaveProofs.value.length + files.length > maxProofCount) {
+    ElMessage.warning('最多选择 5 个证明文件')
+    return
+  }
+  if (files.some(file => !/\.(pdf|jpe?g|png)$/i.test(file.name) || !file.size || file.size > maxProofSize)) {
+    ElMessage.warning('请选择 5 MB 以内的 PDF、JPG 或 PNG 文件')
+    return
+  }
+  leaveProofs.value.push(...files)
+}
+const openLeaveDialog = () => {
+  leaveForm.value = { leaveType: 'personal', reason: '', startAt: '', endAt: '' }
+  leaveProofs.value = []
+  leaveDialog.value = true
+}
+const downloadProof = async (row, index) => {
+  try {
+    await downloadLeaveProof(client, `/uni/student-portal/leaves/${row.id}/proof?index=${index}`, token.value, `${row.id}-${index}`)
+  } catch {
+    ElMessage.error('下载证明失败，请重试')
+  }
+}
 const submitLeave = async () => {
   if (leaveSaving.value) return
   const f = leaveForm.value
   if (!f.reason?.trim() || !f.startAt || !f.endAt || f.endAt <= f.startAt) { ElMessage.warning('请填写完整信息，结束时间必须晚于开始时间'); return }
   leaveSaving.value = true
   try {
-    await call('/uni/student-portal/leaves', 'post', { leaveType: f.leaveType, reason: f.reason.trim(), startAt: f.startAt, endAt: f.endAt })
+    const fields = { leaveType: f.leaveType, reason: f.reason.trim(), startAt: f.startAt, endAt: f.endAt }
+    if (leaveProofs.value.length) {
+      const body = new FormData()
+      for (const [key, value] of Object.entries(fields)) body.append(key, value)
+      for (const file of leaveProofs.value) body.append('proof', file)
+      // Let the browser set Content-Type with the multipart boundary.
+      const response = await fetch(`${base}/uni/student-portal/leaves`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token.value}` },
+        body,
+        signal: AbortSignal.timeout(90000)
+      })
+      if (response.status === 413) throw Error('证明文件超出服务器上传限制')
+      const result = await response.json().catch(() => null)
+      if (response.status === 400 && result?.msg === '请求格式不合法') {
+        throw Error('服务器未识别证明附件请求，请确认后端已更新，再重试提交')
+      }
+      if (!response.ok || result?.code !== 0) throw Error(result?.msg || '请假申请提交失败')
+    } else {
+      await call('/uni/student-portal/leaves', 'post', fields)
+    }
     ElMessage.success('请假申请已提交')
     leaveDialog.value = false
     leavePage.value = 1

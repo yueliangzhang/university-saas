@@ -1,11 +1,15 @@
 package university
 
 import (
+	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"gorm.io/gorm"
 )
 
 // All identity comes from the verified V13 student session, never from request JSON.
@@ -23,7 +27,7 @@ func studentLeaveList(c *gin.Context) {
 	if size > 100 {
 		size = 100
 	}
-	q := global.GVA_DB.Model(&uniLeave{}).Where("tenant_id=? AND student_id=?", tid, sid)
+	q := global.GVA_DB.Table("uni_leave_requests l").Where("l.tenant_id=? AND l.student_id=?", tid, sid)
 	if status := c.Query("status"); status != "" {
 		if !leaveStatusValid(status) {
 			studentAuthError(c, 400, "状态不合法")
@@ -36,8 +40,13 @@ func studentLeaveList(c *gin.Context) {
 		studentAuthError(c, 500, "查询失败")
 		return
 	}
-	var rows []uniLeave
-	if err := q.Order("id DESC").Limit(size).Offset((page - 1) * size).Find(&rows).Error; err != nil {
+	type Leave = uniLeave
+	var rows []struct {
+		Leave
+		HasProof   bool `json:"hasProof"`
+		ProofCount int  `json:"proofCount"`
+	}
+	if err := q.Select("l.*, " + leaveProofColumns).Order("l.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		studentAuthError(c, 500, "查询失败")
 		return
 	}
@@ -48,12 +57,44 @@ func studentLeaveCreate(c *gin.Context) {
 	tid := c.GetUint64(studentPortalTenantID)
 	sid := c.GetUint64(studentPortalStudentID)
 	var in struct {
-		LeaveType string `json:"leaveType"`
-		Reason    string `json:"reason"`
-		StartAt   string `json:"startAt"`
-		EndAt     string `json:"endAt"`
+		LeaveType string `json:"leaveType" form:"leaveType"`
+		Reason    string `json:"reason" form:"reason"`
+		StartAt   string `json:"startAt" form:"startAt"`
+		EndAt     string `json:"endAt" form:"endAt"`
 	}
-	if err := c.ShouldBindJSON(&in); err != nil {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxLeaveProofCount*maxLeaveProofSize+(64<<10))
+	var proofs []*uniLeaveProof
+	if c.ContentType() == "multipart/form-data" {
+		form, err := c.MultipartForm()
+		if err != nil {
+			var limit *http.MaxBytesError
+			if errors.As(err, &limit) {
+				studentAuthError(c, http.StatusRequestEntityTooLarge, "证明文件总大小不能超过 25 MB")
+			} else {
+				studentAuthError(c, http.StatusBadRequest, "无法解析证明上传表单，请刷新页面后重新选择文件")
+			}
+			return
+		}
+		defer form.RemoveAll()
+		if err := binding.MapFormWithTag(&in, form.Value, "form"); err != nil {
+			studentAuthError(c, http.StatusBadRequest, "请假表单字段格式不合法")
+			return
+		}
+		files := form.File["proof"]
+		if len(files) > maxLeaveProofCount {
+			studentAuthError(c, 400, "最多上传 5 份证明文件")
+			return
+		}
+		for index, file := range files {
+			proof, err := readLeaveProof(file)
+			if err != nil {
+				studentAuthError(c, 400, err.Error())
+				return
+			}
+			proof.ProofIndex = uint8(index + 1)
+			proofs = append(proofs, proof)
+		}
+	} else if err := c.ShouldBindJSON(&in); err != nil {
 		studentAuthError(c, 400, "请求格式不合法")
 		return
 	}
@@ -82,11 +123,28 @@ func studentLeaveCreate(c *gin.Context) {
 		return
 	}
 	row := uniLeave{TenantID: tid, StudentID: sid, LeaveType: in.LeaveType, Reason: in.Reason, StartAt: start, EndAt: end, Status: "pending"}
-	if err := global.GVA_DB.Create(&row).Error; err != nil {
+	if err := global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		for _, proof := range proofs {
+			proof.LeaveID = row.ID
+			if err := tx.Create(proof).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		studentAuthError(c, 500, "提交失败")
 		return
 	}
 	studentAuthOK(c, gin.H{"id": row.ID, "status": row.Status})
+}
+
+func studentLeaveProof(c *gin.Context) {
+	downloadLeaveProof(c, func(q *gorm.DB) *gorm.DB {
+		return q.Where("l.tenant_id=? AND l.student_id=?", c.GetUint64(studentPortalTenantID), c.GetUint64(studentPortalStudentID))
+	})
 }
 
 func studentLeaveCancel(c *gin.Context) {
@@ -115,6 +173,7 @@ func studentLeaveCancel(c *gin.Context) {
 func InitStudentLeaveRouter(publicGroup *gin.RouterGroup) {
 	g := publicGroup.Group("uni/student-portal").Use(studentPortalAuth())
 	g.GET("/leaves", studentLeaveList)
+	g.GET("/leaves/:id/proof", studentLeaveProof)
 	g.POST("/leaves", studentLeaveCreate)
 	g.POST("/leaves/cancel", studentLeaveCancel)
 }

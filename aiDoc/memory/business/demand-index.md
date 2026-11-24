@@ -7,5 +7,6 @@
 
 ## Done
 
+- [学生请假证明附件](done/student-leave-proof.md)
 - [学生登录后会话校验修复](done/student-portal-session-validation.md)
 - [请假监管员登出权限](done/leave-monitor-logout.md)
