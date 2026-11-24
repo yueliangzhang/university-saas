@@ -60,8 +60,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="router.push({name: 'universityAdmin', query: {tenantId: row.id}})">管理员管理</el-button>
             <el-button link type="primary" @click="openEdit(row)">
               编辑
             </el-button>
@@ -143,6 +144,8 @@
 
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+const router = useRouter()
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   createTenant,

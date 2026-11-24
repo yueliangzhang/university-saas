@@ -53,6 +53,23 @@ func JWTAuth() gin.HandlerFunc {
 		//	c.Abort()
 		//}
 		c.Set("claims", claims)
+		if utils.GetUserAuthorityId(c) == 2001 {
+			var rows []struct {
+				Cutoff       int64
+				Status       int
+				TenantStatus int
+				Enable       int
+				AuthorityID  uint64
+				Role         string
+			}
+			err := global.GVA_DB.Table("uni_memberships m").Select("m.session_cutoff AS cutoff,m.status,t.status AS tenant_status,u.enable,u.authority_id,m.role").Joins("JOIN uni_tenants t ON t.id=m.tenant_id").Joins("JOIN sys_users u ON u.id=m.user_id AND u.deleted_at IS NULL").Where("m.user_id=?", utils.GetUserID(c)).Scan(&rows).Error
+			if err != nil || len(rows) != 1 || rows[0].Status != 1 || rows[0].TenantStatus != 1 || rows[0].Enable != 1 || rows[0].AuthorityID != 2001 || rows[0].Role != "tenant_admin" || (rows[0].Cutoff > 0 && (claims.IssuedAt == nil || claims.IssuedAt.Unix() <= rows[0].Cutoff)) {
+				response.NoAuth("高校管理员会话已失效，请重新登录", c)
+				utils.ClearToken(c)
+				c.Abort()
+				return
+			}
+		}
 		if claims.ExpiresAt.Unix()-time.Now().Unix() < claims.BufferTime {
 			dr, _ := utils.ParseDuration(global.GVA_CONFIG.JWT.ExpiresTime)
 			claims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(dr))

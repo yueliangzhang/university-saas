@@ -18,10 +18,13 @@ type createAdminRequest struct {
 	Username string `json:"username" binding:"required"`
 	Password string `json:"password" binding:"required"`
 	NickName string `json:"nickName"`
+	Phone    string `json:"phone"`
+	Email    string `json:"email"`
 }
 
 type listAdminRequest struct {
-	TenantID uint64 `json:"tenantId" binding:"required"`
+	TenantID uint64 `json:"tenantId"`
+	Keyword  string `json:"keyword"`
 	Page     int    `json:"page" binding:"required"`
 	PageSize int    `json:"pageSize" binding:"required"`
 }
@@ -42,7 +45,7 @@ func (AdminApi) Create(c *gin.Context) {
 		response.FailWithMessage("用户名不能为空", c)
 		return
 	}
-	id, err := adminService.CreateAdmin(r.TenantID, r.Username, r.Password, r.NickName)
+	id, err := adminService.CreateAdmin(r.TenantID, r.Username, r.Password, r.NickName, r.Phone, r.Email)
 	if err != nil {
 		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) {
 			response.FailWithMessage(err.Error(), c)
@@ -60,7 +63,7 @@ func (AdminApi) List(c *gin.Context) {
 		response.FailWithMessage("请求参数不合法", c)
 		return
 	}
-	rows, total, err := adminService.ListAdmins(r.TenantID, r.Page, r.PageSize)
+	rows, total, err := adminService.ListAdmins(r.TenantID, r.Page, r.PageSize, r.Keyword)
 	if err != nil {
 		response.FailWithMessage("查询管理员失败", c)
 		return
@@ -83,4 +86,38 @@ func (AdminApi) SetStatus(c *gin.Context) {
 		return
 	}
 	response.OkWithMessage("状态更新成功", c)
+}
+
+type adminEditRequest struct {
+	TenantID     uint64 `json:"tenantId" binding:"required"`
+	MembershipID uint64 `json:"membershipId" binding:"required"`
+	NickName     string `json:"nickName"`
+	Phone        string `json:"phone"`
+	Email        string `json:"email"`
+	Password     string `json:"password"`
+}
+
+func (AdminApi) Edit(c *gin.Context) {
+	var r adminEditRequest
+	if c.ShouldBindJSON(&r) != nil {
+		response.FailWithMessage("参数不合法", c)
+		return
+	}
+	if adminService.Edit(r.TenantID, r.MembershipID, r.NickName, r.Phone, r.Email) != nil {
+		response.FailWithMessage("修改失败", c)
+		return
+	}
+	response.OkWithMessage("修改成功", c)
+}
+func (AdminApi) Reset(c *gin.Context) {
+	var r adminEditRequest
+	if c.ShouldBindJSON(&r) != nil {
+		response.FailWithMessage("参数不合法", c)
+		return
+	}
+	if adminService.Reset(r.TenantID, r.MembershipID, r.Password) != nil {
+		response.FailWithMessage("重置失败，密码须为12至72字节", c)
+		return
+	}
+	response.OkWithMessage("重置成功", c)
 }

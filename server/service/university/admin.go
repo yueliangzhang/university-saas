@@ -2,8 +2,8 @@ package university
 
 import (
 	"errors"
-	"fmt"
 	"strings"
+	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	universityModel "github.com/flipped-aurora/gin-vue-admin/server/model/university"
@@ -30,14 +30,25 @@ type AdminListItem struct {
 	NickName     string `json:"nickName" gorm:"column:nick_name"`
 	UserEnabled  int    `json:"userEnabled" gorm:"column:user_enabled"`
 	Status       int8   `json:"status" gorm:"column:status"`
+	TenantName   string `json:"tenantName"`
+	TenantStatus int8   `json:"tenantStatus"`
+	Phone        string `json:"phone"`
+	Email        string `json:"email"`
 }
 
 // CreateAdmin is atomic: sys_users + sys_user_authority + uni_memberships.
-func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName string) (uint64, error) {
+func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName string, contact ...string) (uint64, error) {
 	username = strings.TrimSpace(username)
 	nickName = strings.TrimSpace(nickName)
 	if tenantID == 0 || username == "" || len(username) > 191 || len(password) < 12 || len(password) > 72 || len(nickName) > 191 {
 		return 0, errors.New("参数不合法：密码须为12至72字节")
+	}
+	phone, email := "", ""
+	if len(contact) == 2 {
+		phone, email = contact[0], contact[1]
+	}
+	if len(phone) > 64 || len(email) > 191 || nickName == "" {
+		return 0, errors.New("姓名或联系方式不合法")
 	}
 	var userID uint64
 	err := global.GVA_DB.Transaction(func(tx *gorm.DB) error {
@@ -70,7 +81,7 @@ func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName st
 		user := map[string]interface{}{
 			"uuid": uuid.New().String(), "username": username,
 			"password": utils.BcryptHash(password), "nick_name": nickName,
-			"authority_id": tenantAdminAuthorityID, "enable": 1,
+			"authority_id": tenantAdminAuthorityID, "enable": 1, "phone": phone, "email": email, "created_at": time.Now(), "updated_at": time.Now(),
 		}
 		if err := tx.Table("sys_users").Create(user).Error; err != nil {
 			// DB unique index is authoritative, including concurrent requests.
@@ -104,41 +115,74 @@ func isDuplicateKey(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "Error 1062")
 }
 
-func (AdminService) ListAdmins(tenantID uint64, page, pageSize int) ([]AdminListItem, int64, error) {
-	if tenantID == 0 || page < 1 || pageSize < 1 || pageSize > 100 || page > 1000000 {
+func (AdminService) ListAdmins(tenantID uint64, page, pageSize int, keywords ...string) ([]AdminListItem, int64, error) {
+	if page < 1 || pageSize < 1 || pageSize > 100 || page > 1000000 {
 		return nil, 0, errors.New("分页参数不合法")
 	}
 	q := global.GVA_DB.Table("uni_memberships AS m").
 		Joins("JOIN sys_users AS u ON u.id = m.user_id AND u.deleted_at IS NULL").
-		Where("m.tenant_id = ? AND m.role = ?", tenantID, "tenant_admin")
+		Joins("JOIN uni_tenants AS t ON t.id=m.tenant_id").Where("m.role = ? AND u.authority_id=2001", "tenant_admin")
+	if tenantID != 0 {
+		q = q.Where("m.tenant_id=?", tenantID)
+	}
+	if len(keywords) > 0 && strings.TrimSpace(keywords[0]) != "" {
+		kw := "%" + strings.TrimSpace(keywords[0]) + "%"
+		q = q.Where("(u.username LIKE ? OR u.nick_name LIKE ?)", kw, kw)
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var rows []AdminListItem
-	err := q.Select("m.id AS membership_id, m.tenant_id, m.user_id, u.username, u.nick_name, u.enable AS user_enabled, m.status").
+	err := q.Select("m.id AS membership_id, m.tenant_id, m.user_id, u.username, u.nick_name, u.enable AS user_enabled, m.status, t.name AS tenant_name, t.status AS tenant_status, COALESCE(u.phone,'') AS phone, COALESCE(u.email,'') AS email").
 		Order("m.id DESC").Limit(pageSize).Offset((page - 1) * pageSize).Scan(&rows).Error
 	return rows, total, err
 }
 
 func (AdminService) SetAdminStatus(tenantID, membershipID uint64, status int8) error {
-	if tenantID == 0 || membershipID == 0 || (status != 1 && status != 2) {
-		return errors.New("参数不合法")
+	if status != 1 && status != 2 {
+		return errors.New("状态不合法")
 	}
-	res := global.GVA_DB.Model(&universityModel.Membership{}).
-		Where("id = ? AND tenant_id = ? AND role = ?", membershipID, tenantID, "tenant_admin").
-		Update("status", status)
-	if res.Error != nil {
-		return fmt.Errorf("更新管理员状态失败: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		var count int64
-		if err := global.GVA_DB.Model(&universityModel.Membership{}).Where("id = ? AND tenant_id = ? AND role = ?", membershipID, tenantID, "tenant_admin").Count(&count).Error; err != nil {
+	return adminMutation(tenantID, membershipID, func(tx *gorm.DB, uid uint64) error {
+		if err := tx.Table("sys_users").Where("id=?", uid).Update("enable", status).Error; err != nil {
 			return err
 		}
-		if count == 0 {
+		return tx.Table("uni_memberships").Where("id=?", membershipID).Updates(map[string]interface{}{"status": status, "session_cutoff": time.Now().Unix(), "updated_at": time.Now()}).Error
+	})
+}
+func adminMutation(tid, mid uint64, fn func(*gorm.DB, uint64) error) error {
+	return global.GVA_DB.Transaction(func(tx *gorm.DB) error {
+		var row struct{ UserID uint64 }
+		if err := tx.Table("uni_memberships m").Select("m.user_id").Joins("JOIN sys_users u ON u.id=m.user_id AND u.deleted_at IS NULL").Where("m.id=? AND m.tenant_id=? AND m.role='tenant_admin' AND u.authority_id=2001 AND u.id<>1", mid, tid).Take(&row).Error; err != nil {
 			return ErrMemberNotFound
 		}
+		var count int64
+		if err := tx.Table("uni_memberships").Where("user_id=?", row.UserID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 1 {
+			return ErrMemberNotFound
+		}
+		return fn(tx, row.UserID)
+	})
+}
+func (AdminService) Edit(tid, mid uint64, name, phone, email string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 191 || len(phone) > 64 || len(email) > 191 {
+		return errors.New("参数不合法")
 	}
-	return nil
+	return adminMutation(tid, mid, func(tx *gorm.DB, uid uint64) error {
+		return tx.Table("sys_users").Where("id=?", uid).Updates(map[string]interface{}{"nick_name": name, "phone": phone, "email": email, "updated_at": time.Now()}).Error
+	})
+}
+func (AdminService) Reset(tid, mid uint64, password string) error {
+	if len(password) < 12 || len(password) > 72 {
+		return errors.New("密码须为12至72字节")
+	}
+	return adminMutation(tid, mid, func(tx *gorm.DB, uid uint64) error {
+		if err := tx.Table("sys_users").Where("id=?", uid).Updates(map[string]interface{}{"password": utils.BcryptHash(password), "updated_at": time.Now()}).Error; err != nil {
+			return err
+		}
+		return tx.Table("uni_memberships").Where("id=?", mid).Update("session_cutoff", time.Now().Unix()).Error
+	})
 }

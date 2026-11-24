@@ -12,4 +12,6 @@ func InitAdminRouter(privateGroup *gin.RouterGroup) {
 	group.POST("create", api.Create)
 	group.POST("list", api.List)
 	group.PUT("status", api.SetStatus)
+	group.PUT("edit", api.Edit)
+	group.PUT("password", api.Reset)
 }
