@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -146,6 +147,24 @@ func unifiedPortalLogin(c *gin.Context) {
 			if input.Role == "" || input.Role == role {
 				backendUser = user
 				matches = append(matches, role)
+			}
+		}
+	}
+
+	// A verified teacher identity already linked to this administrator is available
+	// from the administrator workspace after login.
+	if backendUser != nil && input.Role == "" && systemService.UniversityLoginRole(backendUser.AuthorityId) == "tenant_admin" {
+		if account, ok := accounts["teacher"]; ok && slices.Contains(matches, "teacher") {
+			var count int64
+			err := global.GVA_DB.Table("uni_memberships").
+				Where("user_id=? AND tenant_id=? AND advisor_teacher_id=? AND role='tenant_admin' AND status=1", backendUser.ID, account.TenantID, account.ProfileID).
+				Count(&count).Error
+			if err != nil {
+				studentAuthError(c, 500, "登录失败")
+				return
+			}
+			if count == 1 {
+				matches = slices.DeleteFunc(matches, func(role string) bool { return role == "teacher" })
 			}
 		}
 	}

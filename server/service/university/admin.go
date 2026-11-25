@@ -17,24 +17,26 @@ const tenantAdminAuthorityID uint = 2001
 var (
 	ErrTenantNotActive = errors.New("高校不存在或已停用")
 	ErrUsernameTaken   = errors.New("用户名已存在")
+	ErrAdvisorLink     = errors.New("请选择本校有效且未关联其他管理员的教师工号")
 	ErrMemberNotFound  = errors.New("高校管理员成员不存在")
 )
 
 type AdminService struct{}
 
 type AdminListItem struct {
-	MembershipID uint64 `json:"membershipId" gorm:"column:membership_id"`
-	TenantID     uint64 `json:"tenantId" gorm:"column:tenant_id"`
-	UserID       uint64 `json:"userId" gorm:"column:user_id"`
-	Username     string `json:"username" gorm:"column:username"`
-	NickName     string `json:"nickName" gorm:"column:nick_name"`
-	UserEnabled  int    `json:"userEnabled" gorm:"column:user_enabled"`
-	Status       int8   `json:"status" gorm:"column:status"`
-	AuthorityID  uint   `json:"authorityId"`
-	TenantName   string `json:"tenantName"`
-	TenantStatus int8   `json:"tenantStatus"`
-	Phone        string `json:"phone"`
-	Email        string `json:"email"`
+	MembershipID     uint64 `json:"membershipId" gorm:"column:membership_id"`
+	TenantID         uint64 `json:"tenantId" gorm:"column:tenant_id"`
+	UserID           uint64 `json:"userId" gorm:"column:user_id"`
+	Username         string `json:"username" gorm:"column:username"`
+	NickName         string `json:"nickName" gorm:"column:nick_name"`
+	UserEnabled      int    `json:"userEnabled" gorm:"column:user_enabled"`
+	Status           int8   `json:"status" gorm:"column:status"`
+	AuthorityID      uint   `json:"authorityId"`
+	AdvisorTeacherNo string `json:"advisorTeacherNo"`
+	TenantName       string `json:"tenantName"`
+	TenantStatus     int8   `json:"tenantStatus"`
+	Phone            string `json:"phone"`
+	Email            string `json:"email"`
 }
 
 // CreateAdmin is atomic: sys_users + sys_user_authority + uni_memberships.
@@ -134,7 +136,8 @@ func (AdminService) ListAdmins(tenantID uint64, page, pageSize int, keywords ...
 	}
 	q := global.GVA_DB.Table("uni_memberships AS m").
 		Joins("JOIN sys_users AS u ON u.id = m.user_id AND u.deleted_at IS NULL").
-		Joins("JOIN uni_tenants AS t ON t.id=m.tenant_id").Where("((m.role='tenant_admin' AND u.authority_id=2001) OR (m.role='leave_monitor' AND u.authority_id=2002))")
+		Joins("JOIN uni_tenants AS t ON t.id=m.tenant_id").
+		Joins("LEFT JOIN uni_teachers AS advisor ON advisor.tenant_id=m.tenant_id AND advisor.id=m.advisor_teacher_id").Where("((m.role='tenant_admin' AND u.authority_id=2001) OR (m.role='leave_monitor' AND u.authority_id=2002))")
 	if tenantID != 0 {
 		q = q.Where("m.tenant_id=?", tenantID)
 	}
@@ -147,7 +150,7 @@ func (AdminService) ListAdmins(tenantID uint64, page, pageSize int, keywords ...
 		return nil, 0, err
 	}
 	var rows []AdminListItem
-	err := q.Select("m.id AS membership_id, m.tenant_id, m.user_id, u.username, u.nick_name, u.authority_id, u.enable AS user_enabled, m.status, t.name AS tenant_name, t.status AS tenant_status, COALESCE(u.phone,'') AS phone, COALESCE(u.email,'') AS email").
+	err := q.Select("m.id AS membership_id, m.tenant_id, m.user_id, u.username, u.nick_name, u.authority_id, u.enable AS user_enabled, m.status, t.name AS tenant_name, t.status AS tenant_status, COALESCE(advisor.teacher_no,'') AS advisor_teacher_no, COALESCE(u.phone,'') AS phone, COALESCE(u.email,'') AS email").
 		Order("m.id DESC").Limit(pageSize).Offset((page - 1) * pageSize).Scan(&rows).Error
 	return rows, total, err
 }
@@ -179,12 +182,40 @@ func adminMutation(tid, mid uint64, fn func(*gorm.DB, uint64) error) error {
 		return fn(tx, row.UserID)
 	})
 }
-func (AdminService) Edit(tid, mid uint64, name, phone, email string) error {
+func (AdminService) Edit(tid, mid uint64, name, phone, email string, advisorTeacherNo *string) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 191 || len(phone) > 64 || len(email) > 191 {
 		return errors.New("参数不合法")
 	}
 	return adminMutation(tid, mid, func(tx *gorm.DB, uid uint64) error {
+		if advisorTeacherNo != nil {
+			number := strings.TrimSpace(*advisorTeacherNo)
+			var teacherID any
+			if number != "" {
+				var teacher struct{ ID uint64 }
+				err := tx.Table("uni_teachers").Select("id").Where("tenant_id=? AND status=1 AND teacher_no=?", tid, number).Take(&teacher).Error
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrAdvisorLink
+				}
+				if err != nil {
+					return err
+				}
+				teacherID = teacher.ID
+			}
+			result := tx.Table("uni_memberships").Where("id=? AND tenant_id=? AND role='tenant_admin'", mid, tid).Update("advisor_teacher_id", teacherID)
+			if result.Error != nil {
+				return ErrAdvisorLink
+			}
+			if result.RowsAffected == 0 {
+				var count int64
+				if err := tx.Table("uni_memberships").Where("id=? AND tenant_id=? AND role='tenant_admin'", mid, tid).Count(&count).Error; err != nil {
+					return err
+				}
+				if count == 0 {
+					return ErrAdvisorLink
+				}
+			}
+		}
 		return tx.Table("sys_users").Where("id=?", uid).Updates(map[string]interface{}{"nick_name": name, "phone": phone, "email": email, "updated_at": time.Now()}).Error
 	})
 }

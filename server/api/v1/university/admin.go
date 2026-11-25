@@ -90,12 +90,13 @@ func (AdminApi) SetStatus(c *gin.Context) {
 }
 
 type adminEditRequest struct {
-	TenantID     uint64 `json:"tenantId" binding:"required"`
-	MembershipID uint64 `json:"membershipId" binding:"required"`
-	NickName     string `json:"nickName"`
-	Phone        string `json:"phone"`
-	Email        string `json:"email"`
-	Password     string `json:"password"`
+	TenantID         uint64  `json:"tenantId" binding:"required"`
+	MembershipID     uint64  `json:"membershipId" binding:"required"`
+	NickName         string  `json:"nickName"`
+	Phone            string  `json:"phone"`
+	Email            string  `json:"email"`
+	Password         string  `json:"password"`
+	AdvisorTeacherNo *string `json:"advisorTeacherNo"`
 }
 
 func (AdminApi) Edit(c *gin.Context) {
@@ -104,8 +105,12 @@ func (AdminApi) Edit(c *gin.Context) {
 		response.FailWithMessage("参数不合法", c)
 		return
 	}
-	if adminService.Edit(r.TenantID, r.MembershipID, r.NickName, r.Phone, r.Email) != nil {
-		response.FailWithMessage("修改失败", c)
+	if err := adminService.Edit(r.TenantID, r.MembershipID, r.NickName, r.Phone, r.Email, r.AdvisorTeacherNo); err != nil {
+		if errors.Is(err, universityService.ErrAdvisorLink) {
+			response.FailWithMessage(err.Error(), c)
+		} else {
+			response.FailWithMessage("修改失败", c)
+		}
 		return
 	}
 	response.OkWithMessage("修改成功", c)

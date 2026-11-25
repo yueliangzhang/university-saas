@@ -173,6 +173,10 @@ router.beforeEach(async (to, from) => {
     return { name: 'Login' }
   }
 
+  if (to.name === 'advisorWorkspace' && !token) {
+    return { name: 'Login' }
+  }
+
   if (to.meta.client) {
     return true
   }

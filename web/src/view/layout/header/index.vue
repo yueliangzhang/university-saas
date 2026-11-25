@@ -78,6 +78,9 @@
                 <span> 切换为：{{ item.authorityName }} </span>
               </el-dropdown-item>
             </template>
+            <el-dropdown-item v-if="advisorAvailable" @click="router.push({ name: 'advisorWorkspace' })">
+              切换为：辅导员
+            </el-dropdown-item>
             <el-dropdown-item icon="reading-lamp" @click="userStore.LoginOut">
               登 出
             </el-dropdown-item>
@@ -94,7 +97,8 @@
   import { useRoute, useRouter } from 'vue-router'
   import { useAppStore } from '@/pinia'
   import { storeToRefs } from 'pinia'
-  import { computed } from 'vue'
+  import { computed, ref, watch } from 'vue'
+  import request from '@/utils/request'
   import { setUserAuthority } from '@/api/user'
   import { fmtTitle } from '@/utils/fmtRouterTitle'
   import gvaAside from '@/view/layout/aside/index.vue'
@@ -109,6 +113,24 @@
     return device.value === 'mobile'
   })
   const matched = computed(() => route.meta.matched)
+
+  const advisorAvailable = ref(false)
+  watch(
+    () => [userStore.userInfo.ID, userStore.userInfo.authorityId],
+    async ([userID, authorityID], _, onCleanup) => {
+      advisorAvailable.value = false
+      if (!userID || authorityID !== 2001) return
+      let current = true
+      onCleanup(() => { current = false })
+      try {
+        const result = await request({ url: '/uni/advisor-workspace/status', donNotShowLoading: true })
+        if (current) advisorAvailable.value = result.data?.available === true
+      } catch {
+        // The existing menu remains available if the status request fails.
+      }
+    },
+    { immediate: true }
+  )
 
   const changeUserAuth = async (id) => {
     const res = await setUserAuthority({

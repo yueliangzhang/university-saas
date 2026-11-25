@@ -25,6 +25,7 @@ func initBizRouter(routers ...*gin.RouterGroup) {
 	universityRouter.InitTeacherRouter(privateGroup)
 	universityRouter.InitTeacherAccountRouter(privateGroup)
 	universityRouter.InitTeacherPortalRouter(publicGroup)
+	universityRouter.InitAdvisorWorkspaceRouter(privateGroup)
 	universityRouter.InitLeaveRouter(privateGroup)
 	universityRouter.InitMonitorRouter(privateGroup)
 	// V13：高校管理员管理学生登录账号，需要管理员 JWT

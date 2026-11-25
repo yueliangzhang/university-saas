@@ -48,7 +48,7 @@ func TestStudentPortalLoginThenMe(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
-		"CREATE TABLE uni_memberships (tenant_id INTEGER, user_id INTEGER, role TEXT, status INTEGER)",
+		"CREATE TABLE uni_memberships (tenant_id INTEGER, user_id INTEGER, role TEXT, status INTEGER, advisor_teacher_id INTEGER)",
 		"CREATE TABLE uni_tenants (id INTEGER PRIMARY KEY, code TEXT UNIQUE, status INTEGER)",
 		"CREATE TABLE uni_students (id INTEGER PRIMARY KEY, tenant_id INTEGER, status INTEGER, student_no TEXT, name TEXT, class_id INTEGER, enrollment_year INTEGER, advisor_id INTEGER)",
 		"CREATE TABLE uni_teachers (id INTEGER PRIMARY KEY, tenant_id INTEGER, name TEXT, teacher_no TEXT, status INTEGER)",
@@ -168,7 +168,7 @@ func TestStudentPortalLoginThenMe(t *testing.T) {
 		if err := db.Create(&user).Error; err != nil {
 			t.Fatal(err)
 		}
-		if err := db.Exec("INSERT INTO uni_memberships VALUES (1, ?, ?, 1)", user.ID, test.role).Error; err != nil {
+		if err := db.Exec("INSERT INTO uni_memberships (tenant_id,user_id,role,status) VALUES (1, ?, ?, 1)", user.ID, test.role).Error; err != nil {
 			t.Fatal(err)
 		}
 		result := login("/uni/portal/login", `{"tenantCode":"0007","account":"`+test.role+`","password":"testpw"}`)
@@ -186,6 +186,17 @@ func TestStudentPortalLoginThenMe(t *testing.T) {
 		}
 	}
 
+	if err := db.Exec("UPDATE uni_memberships SET advisor_teacher_id=4 WHERE role='tenant_admin'").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE uni_teachers SET teacher_no='tenant_admin' WHERE id=4").Error; err != nil {
+		t.Fatal(err)
+	}
+	result = login("/uni/portal/login", `{"tenantCode":"0007","account":"tenant_admin","password":"testpw"}`)
+	if result.Code != http.StatusOK || !strings.Contains(result.Body.String(), `"user"`) ||
+		strings.Contains(result.Body.String(), `"roles"`) {
+		t.Fatalf("linked administrator login returned %d: %s", result.Code, result.Body)
+	}
 	for attempt := 0; attempt < 10; attempt++ {
 		result := login("/uni/portal/login", `{"tenantCode":"0007","account":"unknown","password":"wrong"}`)
 		if result.Code == http.StatusTooManyRequests {

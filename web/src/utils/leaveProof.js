@@ -1,6 +1,6 @@
 export async function downloadLeaveProof(client, url, token, id) {
   const { data, headers } = await client.get(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     responseType: 'blob'
   })
   const disposition = headers['content-disposition'] || ''

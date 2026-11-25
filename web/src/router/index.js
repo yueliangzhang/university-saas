@@ -45,6 +45,13 @@ const routes = [
     meta: { title: '教师门户', client: true }
   },
   {
+    path: '/advisor',
+    name: 'advisorWorkspace',
+    component: () => import('@/view/university/teacherPortal.vue'),
+    props: { advisorMode: true },
+    meta: { title: '辅导员工作台', client: true }
+  },
+  {
     path: '/student',
     name: 'studentPortal',
     component: () => import('@/view/university/studentPortal.vue'),

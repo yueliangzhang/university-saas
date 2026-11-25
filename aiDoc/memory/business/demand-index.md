@@ -7,6 +7,8 @@
 
 ## Done
 
+- [高校管理员与辅导员切换](done/university-advisor-workspace.md)
+
 - [高校四类账号统一登录](done/university-unified-login.md)
 
 - [高校批量导入列表删除与排序](done/university-record-bulk-delete-sort.md)
