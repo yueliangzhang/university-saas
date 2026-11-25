@@ -3,6 +3,7 @@ package university
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
 	"github.com/gin-gonic/gin"
+	"github.com/xuri/excelize/v2"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -178,14 +180,23 @@ func teacherPortalLogout(c *gin.Context) {
 	teacherPortalOK(c, gin.H{"loggedOut": true})
 }
 func teacherAssignedClasses(c *gin.Context) {
-	tid := c.GetUint64(teacherTenantKey)
-	teacher := c.GetUint64(teacherIDKey)
+	tid, teacher := c.GetUint64(teacherTenantKey), c.GetUint64(teacherIDKey)
+	now := time.Now()
 	var rows []struct {
-		ID   uint64 `json:"id"`
-		Name string `json:"name"`
-		Code string `json:"code"`
+		ID           uint64 `json:"id"`
+		Name         string `json:"name"`
+		Code         string `json:"code"`
+		StudentCount int64  `json:"studentCount"`
+		OnLeave      int64  `json:"onLeave"`
 	}
-	if err := global.GVA_DB.Table("uni_students s").Select("DISTINCT cl.id,cl.name,cl.code").Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").Where("s.tenant_id=? AND s.advisor_id=?", tid, teacher).Order("cl.id").Scan(&rows).Error; err != nil {
+	err := global.GVA_DB.Table("uni_students s").
+		Select(`cl.id,cl.name,cl.code,COUNT(*) AS student_count,
+		SUM(CASE WHEN EXISTS (SELECT 1 FROM uni_leave_requests l WHERE l.tenant_id=s.tenant_id AND l.student_id=s.id
+		AND l.status='approved' AND l.start_at<=? AND l.end_at>?) THEN 1 ELSE 0 END) AS on_leave`, now, now).
+		Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").
+		Where("s.tenant_id=? AND s.advisor_id=?", tid, teacher).
+		Group("cl.id,cl.name,cl.code").Order("cl.id").Scan(&rows).Error
+	if err != nil {
 		teacherPortalFail(c, 500, "查询班级失败")
 		return
 	}
@@ -216,20 +227,25 @@ func teacherAssignedStudents(c *gin.Context) {
 		}
 		q = q.Where("s.class_id=?", id)
 	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		like := "%" + keyword + "%"
+		q = q.Where("(s.name LIKE ? OR s.student_no LIKE ?)", like, like)
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		teacherPortalFail(c, 500, "查询失败")
 		return
 	}
 	var rows []struct {
-		ID        uint64 `json:"id"`
-		StudentNo string `json:"studentNo"`
-		Name      string `json:"name"`
-		ClassID   uint64 `json:"classId"`
-		ClassName string `json:"className"`
-		Status    int    `json:"status"`
+		ID             uint64 `json:"id"`
+		StudentNo      string `json:"studentNo"`
+		Name           string `json:"name"`
+		ClassID        uint64 `json:"classId"`
+		ClassName      string `json:"className"`
+		EnrollmentYear int    `json:"enrollmentYear"`
+		Status         int    `json:"status"`
 	}
-	if err := q.Select("s.id,s.student_no,s.name,s.class_id,cl.name class_name,s.status").Order("s.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
+	if err := q.Select("s.id,s.student_no,s.name,s.class_id,cl.name class_name,s.enrollment_year,s.status").Order("s.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		teacherPortalFail(c, 500, "查询失败")
 		return
 	}
@@ -252,11 +268,12 @@ func teacherLeaveList(c *gin.Context) {
 	if size > 100 {
 		size = 100
 	}
-	q := global.GVA_DB.Table("uni_leave_requests l").
+	scope := global.GVA_DB.WithContext(c.Request.Context()).Table("uni_leave_requests l").
 		Joins("JOIN uni_students s ON s.tenant_id=l.tenant_id AND s.id=l.student_id").
 		Where("s.advisor_id=?", teacher).
 		Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").
 		Where("l.tenant_id=?", tid)
+	q := scope.Session(&gorm.Session{})
 	// Class filter is enforced in the database after the teacher/advisor join.
 	// A teacher cannot query another class by guessing its ID.
 	if raw := strings.TrimSpace(c.Query("classId")); raw != "" {
@@ -285,6 +302,33 @@ func teacherLeaveList(c *gin.Context) {
 		}
 		q = q.Where("l.status=?", status)
 	}
+	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
+		like := "%" + keyword + "%"
+		q = q.Where("(s.name LIKE ? OR s.student_no LIKE ?)", like, like)
+	}
+	from, to := c.Query("from"), c.Query("to")
+	if from != "" || to != "" {
+		start, startErr := time.Parse(time.DateOnly, from)
+		end, endErr := time.Parse(time.DateOnly, to)
+		if startErr != nil || endErr != nil || end.Before(start) || end.Year() >= 9999 {
+			teacherPortalFail(c, 400, "日期范围不合法")
+			return
+		}
+		q = q.Where("l.end_at>? AND l.start_at<?", start.Format(time.DateTime), end.AddDate(0, 0, 1).Format(time.DateTime))
+	}
+	if c.Query("format") == "xlsx" {
+		exportTeacherLeaves(c, q)
+		return
+	}
+	result := gin.H{}
+	if c.Query("includeSummary") == "true" {
+		summary, err := teacherLeaveSummary(scope)
+		if err != nil {
+			teacherPortalFail(c, 500, "统计请假失败")
+			return
+		}
+		result["summary"] = summary
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		teacherPortalFail(c, 500, "查询失败")
@@ -310,8 +354,78 @@ func teacherLeaveList(c *gin.Context) {
 		teacherPortalFail(c, 500, "查询失败")
 		return
 	}
-	teacherPortalOK(c, gin.H{"list": rows, "total": total})
+	result["list"], result["total"] = rows, total
+	teacherPortalOK(c, result)
 }
+func teacherLeaveSummary(scope *gorm.DB) (gin.H, error) {
+	var pending int64
+	if err := scope.Session(&gorm.Session{}).Where("l.status='pending'").Count(&pending).Error; err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	days := make([]time.Time, 7)
+	counts := make([]int64, len(days))
+	columns := make([]string, len(days))
+	args := make([]any, 0, 2*len(days))
+	dest := make([]any, len(days))
+	for i := range days {
+		days[i] = today.AddDate(0, 0, i-6)
+		columns[i] = "COUNT(DISTINCT CASE WHEN l.start_at<? AND l.end_at>? THEN l.student_id END)"
+		args = append(args, days[i].AddDate(0, 0, 1), days[i])
+		dest[i] = &counts[i]
+	}
+	err := scope.Session(&gorm.Session{}).Where("l.status='approved' AND l.start_at<? AND l.end_at>?", today.AddDate(0, 0, 1), days[0]).
+		Select(strings.Join(columns, ","), args...).Row().Scan(dest...)
+	if err != nil {
+		return nil, err
+	}
+	trend := make([]gin.H, len(days))
+	for i, day := range days {
+		trend[i] = gin.H{"date": day.Format(time.DateOnly), "count": counts[i]}
+	}
+	return gin.H{"pending": pending, "trend": trend}, nil
+}
+
+func exportTeacherLeaves(c *gin.Context, query *gorm.DB) {
+	var rows []struct {
+		StudentNo, Name, ClassName, LeaveType, Reason, Status, ReviewNote string
+		StartAt, EndAt                                                    time.Time
+	}
+	if err := query.Select("s.student_no,s.name,cl.name AS class_name,l.leave_type,l.reason,l.status,l.review_note,l.start_at,l.end_at").
+		Order("l.id DESC").Limit(10001).Scan(&rows).Error; err != nil {
+		teacherPortalFail(c, 500, "查询导出数据失败")
+		return
+	}
+	if len(rows) > 10000 {
+		teacherPortalFail(c, 400, "导出最多10000条，请缩小筛选范围")
+		return
+	}
+	file := excelize.NewFile()
+	defer file.Close()
+	sheet := file.GetSheetName(0)
+	if err := file.SetSheetRow(sheet, "A1", &[]string{"学号", "姓名", "班级", "类型", "开始时间", "结束时间", "原因", "状态", "审批意见"}); err != nil {
+		teacherPortalFail(c, 500, "生成报表失败")
+		return
+	}
+	types := map[string]string{"sick": "病假", "personal": "事假", "other": "其他"}
+	statuses := map[string]string{"pending": "待审批", "approved": "已通过", "rejected": "已驳回", "cancelled": "已撤销"}
+	for i, row := range rows {
+		values := []string{row.StudentNo, row.Name, row.ClassName, types[row.LeaveType], row.StartAt.Format(time.DateTime), row.EndAt.Format(time.DateTime), row.Reason, statuses[row.Status], row.ReviewNote}
+		if err := file.SetSheetRow(sheet, "A"+strconv.Itoa(i+2), &values); err != nil {
+			teacherPortalFail(c, 500, "生成报表失败")
+			return
+		}
+	}
+	content, err := file.WriteToBuffer()
+	if err != nil {
+		teacherPortalFail(c, 500, "生成报表失败")
+		return
+	}
+	c.Header("Content-Disposition", "attachment; filename=teacher-leaves.xlsx")
+	c.Data(http.StatusOK, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", content.Bytes())
+}
+
 func teacherLeaveProof(c *gin.Context) {
 	downloadLeaveProof(c, func(q *gorm.DB) *gorm.DB {
 		return q.Joins("JOIN uni_students s ON s.tenant_id=l.tenant_id AND s.id=l.student_id").
@@ -323,11 +437,12 @@ func teacherLeaveReview(c *gin.Context) {
 	tid := c.GetUint64(teacherTenantKey)
 	teacher := c.GetUint64(teacherIDKey)
 	var in struct {
-		ID     uint64 `json:"id"`
-		Action string `json:"action"`
-		Note   string `json:"note"`
+		ID     uint64   `json:"id"`
+		IDs    []uint64 `json:"ids"`
+		Action string   `json:"action"`
+		Note   string   `json:"note"`
 	}
-	if c.ShouldBindJSON(&in) != nil || in.ID == 0 || (in.Action != "approved" && in.Action != "rejected") {
+	if c.ShouldBindJSON(&in) != nil || (in.Action != "approved" && in.Action != "rejected") {
 		teacherPortalFail(c, 400, "参数不合法")
 		return
 	}
@@ -336,20 +451,49 @@ func teacherLeaveReview(c *gin.Context) {
 		teacherPortalFail(c, 400, "驳回必须填写原因，备注不超过1000字节")
 		return
 	}
-	// A single conditional update ensures that only assigned advisors can review pending requests.
-	tx := global.GVA_DB.Exec(`UPDATE uni_leave_requests l SET l.status=?,l.review_note=?,l.reviewed_at=NOW(3),l.updated_at=NOW(3),l.reviewer_id=NULL
- WHERE l.id=? AND l.tenant_id=? AND l.status='pending' AND EXISTS (
- SELECT 1 FROM uni_students s
- WHERE s.tenant_id=l.tenant_id AND s.id=l.student_id AND s.advisor_id=?)`, in.Action, in.Note, in.ID, tid, teacher)
-	if tx.Error != nil {
+	batch := in.IDs != nil
+	ids := in.IDs
+	if !batch {
+		ids = []uint64{in.ID}
+	} else if in.ID != 0 {
+		teacherPortalFail(c, 400, "请只提交一组申请编号")
+		return
+	}
+	seen := make(map[uint64]bool)
+	if len(ids) == 0 || len(ids) > 50 {
+		teacherPortalFail(c, 400, "每批可审批1至50条申请")
+		return
+	}
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			teacherPortalFail(c, 400, "申请编号不合法或重复")
+			return
+		}
+		seen[id] = true
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	err := global.GVA_DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec(`UPDATE uni_leave_requests AS l SET status=?,review_note=?,reviewed_at=?,updated_at=?,reviewer_id=NULL
+		 WHERE l.id IN ? AND l.tenant_id=? AND l.status='pending' AND EXISTS (
+		 SELECT 1 FROM uni_students s WHERE s.tenant_id=l.tenant_id AND s.id=l.student_id AND s.advisor_id=?)`,
+			in.Action, in.Note, time.Now(), time.Now(), ids, tid, teacher)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != int64(len(ids)) {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		teacherPortalFail(c, 409, "所选申请中有记录已审批、不存在或不属于你负责的学生")
+		return
+	}
+	if err != nil {
 		teacherPortalFail(c, 500, "审批失败")
 		return
 	}
-	if tx.RowsAffected != 1 {
-		teacherPortalFail(c, 409, "申请不存在、已审批或不属于你负责的学生")
-		return
-	}
-	teacherPortalOK(c, gin.H{"id": in.ID, "status": in.Action})
+	teacherPortalOK(c, gin.H{"id": in.ID, "status": in.Action, "count": len(ids)})
 }
 func teacherAccountList(c *gin.Context) {
 	tid, ok := middleware.GetTenantID(c)
