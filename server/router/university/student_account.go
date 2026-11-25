@@ -1,10 +1,9 @@
 package university
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // V13 student sessions are intentionally separate from GVA administrator JWTs.
@@ -207,68 +205,30 @@ func studentPortalLogin(c *gin.Context) {
 		studentAuthError(c, 400, "参数不合法")
 		return
 	}
-	var row struct {
-		MustChangePassword bool
-		FailedAttempts     int
-		LockedUntil        *time.Time
-		ID                 uint64 `gorm:"column:id"`
-		TenantID           uint64 `gorm:"column:tenant_id"`
-		StudentID          uint64 `gorm:"column:student_id"`
-		PasswordHash       string `gorm:"column:password_hash"`
+	row, err := findPortalLogin("student", code, in.TenantID, in.StudentNo)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		studentAuthError(c, 500, "登录失败")
+		return
 	}
-	query := global.GVA_DB.Table("uni_student_accounts a").Select("a.id,a.tenant_id,a.student_id,a.password_hash,a.must_change_password,a.failed_attempts,a.locked_until").
-		Joins("JOIN uni_students s ON s.tenant_id=a.tenant_id AND s.id=a.student_id").
-		Joins("JOIN uni_tenants t ON t.id=a.tenant_id").
-		Where("s.student_no=? AND a.status=1 AND s.status=1 AND t.status=1", strings.TrimSpace(in.StudentNo))
-	if code != "" {
-		query = query.Where("t.code=?", code)
-	} else {
-		query = query.Where("a.tenant_id=?", in.TenantID)
-	}
-	err := query.Take(&row).Error
-	if err == nil && row.LockedUntil != nil && row.LockedUntil.After(time.Now()) {
+	if err == nil && row.locked() {
 		studentAuthError(c, 429, "登录暂时锁定，请15分钟后重试")
 		return
 	}
-	if err != nil || bcrypt.CompareHashAndPassword([]byte(row.PasswordHash), []byte(in.Password)) != nil {
-		if err == nil {
-			if e := recordLoginFailure("student", row.TenantID, row.ID, row.PasswordHash); e != nil {
-				studentAuthError(c, 500, "登录失败")
-				return
-			}
+	if err != nil || !row.matches(in.Password) {
+		if err == nil && recordLoginFailure("student", row.TenantID, row.ID, row.PasswordHash) != nil {
+			studentAuthError(c, 500, "登录失败")
+			return
 		}
 		studentAuthError(c, 401, "高校、学号或密码错误")
 		return
 	}
-	random := make([]byte, 32)
-	if _, err = rand.Read(random); err != nil {
-		studentAuthError(c, 500, "创建会话失败")
-		return
-	}
-	token := base64.RawURLEncoding.EncodeToString(random)
-	expires := time.Now().Add(12 * time.Hour)
-	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
-		var current struct {
-			PasswordHash string
-			LockedUntil  *time.Time
-			Status       int
-		}
-		if e := tx.Table("uni_student_accounts").Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id=? AND id=?", row.TenantID, row.ID).Take(&current).Error; e != nil {
-			return e
-		}
-		if current.PasswordHash != row.PasswordHash || current.Status != 1 || (current.LockedUntil != nil && current.LockedUntil.After(time.Now())) {
-			return gorm.ErrRecordNotFound
-		}
-		if e := tx.Table("uni_student_sessions").Create(map[string]interface{}{"tenant_id": row.TenantID, "account_id": row.ID, "token_hash": studentHashToken(token), "expires_at": expires}).Error; e != nil {
-			return e
-		}
-		return tx.Table("uni_student_accounts").Where("id=? AND tenant_id=?", row.ID, row.TenantID).Updates(map[string]interface{}{"last_login_at": time.Now(), "failed_attempts": 0, "locked_until": nil}).Error
-	})
+	data, err := issuePortalLogin("student", row)
 	if err != nil {
 		studentAuthError(c, 500, "创建会话失败")
 		return
 	}
-	studentAuthOK(c, gin.H{"mustChangePassword": row.MustChangePassword, "token": token, "expiresAt": expires, "studentId": row.StudentID})
+	data["studentId"] = row.ProfileID
+	studentAuthOK(c, data)
 }
 
 const studentPortalStudentID = "uniPortalStudentID"
@@ -408,6 +368,7 @@ func InitStudentAccountRouter(privateGroup *gin.RouterGroup) {
 
 // Register under GVA's PUBLIC group, not the JWT-protected private group.
 func InitStudentPortalRouter(publicGroup *gin.RouterGroup) {
+	publicGroup.POST("/uni/portal/login", unifiedPortalLogin)
 	g := publicGroup.Group("uni/student-portal")
 	g.POST("/login", studentPortalLogin)
 	protected := g.Group("").Use(studentPortalAuth())

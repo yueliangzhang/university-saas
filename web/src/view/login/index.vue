@@ -20,21 +20,23 @@
                 {{ $GIN_VUE_ADMIN.appName }}
               </p>
               <p class="text-center text-sm font-normal text-gray-500 mt-2.5">
-                高校业务管理后台
+                {{ platformMode ? '平台管理登录' : '高校统一登录' }}
               </p>
             </div>
             <el-form
               ref="loginForm"
               :model="loginFormData"
+              :disabled="submitting"
               :rules="rules"
               :validate-on-rule-change="false"
-              @keyup.enter="submitForm"
+              @keyup.enter="submitForm()"
             >
               <el-form-item prop="username" class="mb-6">
                 <el-input
                   v-model="loginFormData.username"
                   size="large"
-                  placeholder="请输入用户名"
+                  :placeholder="platformMode ? '请输入用户名' : '用户名、学号或教师工号'"
+                  autocomplete="username"
                   suffix-icon="user"
                 />
               </el-form-item>
@@ -45,10 +47,20 @@
                   size="large"
                   type="password"
                   placeholder="请输入密码"
+                  autocomplete="current-password"
+                />
+              </el-form-item>
+              <el-form-item v-if="!platformMode" prop="tenantCode" class="mb-6">
+                <el-input
+                  v-model.trim="loginFormData.tenantCode"
+                  size="large"
+                  maxlength="64"
+                  placeholder="高校编号"
+                  aria-label="高校编号"
                 />
               </el-form-item>
               <el-form-item
-                v-if="loginFormData.openCaptcha"
+                v-if="platformMode && loginFormData.openCaptcha"
                 prop="captcha"
                 class="mb-6"
               >
@@ -75,9 +87,19 @@
                   class="shadow shadow-active h-11 w-full"
                   type="primary"
                   size="large"
-                  @click="submitForm"
+                  :loading="submitting"
+                  @click="submitForm()"
                   >登 录</el-button
                 >
+              </el-form-item>
+              <el-form-item v-if="matchingRoles.length">
+                <span class="w-full">请选择本次登录的身份</span>
+                <el-button
+                  v-for="role in matchingRoles"
+                  :key="role"
+                  :disabled="submitting"
+                  @click="submitForm(role)"
+                >{{ portalRoles[role].label }}</el-button>
               </el-form-item>
               <el-form-item v-if="isDev" class="mb-6">
                 <el-button
@@ -89,6 +111,9 @@
                 >
               </el-form-item>
             </el-form>
+            <router-link v-if="platformMode" :to="{ name: 'Login' }" class="text-sm text-gray-500">
+              返回高校统一登录
+            </router-link>
           </div>
         </div>
       </div>
@@ -107,7 +132,8 @@
 <script setup>
   import { captcha } from '@/api/user'
   import { checkDB } from '@/api/initdb'
-  import { reactive, ref } from 'vue'
+  import { computed, reactive, ref, watch } from 'vue'
+  import axios from 'axios'
   import { ElMessage } from 'element-plus'
   import { useRouter } from 'vue-router'
   import { useUserStore } from '@/pinia/modules/user'
@@ -119,24 +145,10 @@
   })
 
   const router = useRouter()
+  const platformMode = computed(() => router.currentRoute.value.name === 'PlatformLogin')
   const captchaRequiredLength = ref(6)
-  // 验证函数
-  const checkUsername = (rule, value, callback) => {
-    if (value.length < 5) {
-      return callback(new Error('请输入正确的用户名'))
-    } else {
-      callback()
-    }
-  }
-  const checkPassword = (rule, value, callback) => {
-    if (value.length < 6) {
-      return callback(new Error('请输入正确的密码'))
-    } else {
-      callback()
-    }
-  }
   const checkCaptcha = (rule, value, callback) => {
-    if (!loginFormData.openCaptcha) {
+    if (!platformMode.value || !loginFormData.openCaptcha) {
       return callback()
     }
     const sanitizedValue = (value || '').replace(/\s+/g, '')
@@ -162,55 +174,99 @@
     const ele = await captcha()
     captchaRequiredLength.value = Number(ele.data?.captchaLength) || 0
     picPath.value = ele.data?.picPath
+    loginFormData.captcha = ''
     loginFormData.captchaId = ele.data?.captchaId
     loginFormData.openCaptcha = ele.data?.openCaptcha
   }
-  loginVerify()
 
   // 登录相关操作
   const loginForm = ref(null)
   const picPath = ref('')
   const loginFormData = reactive({
-    username: 'admin',
+    username: '',
+    tenantCode: '',
     password: '',
     captcha: '',
     captchaId: '',
     openCaptcha: false
   })
   const rules = reactive({
-    username: [{ validator: checkUsername, trigger: 'blur' }],
-    password: [{ validator: checkPassword, trigger: 'blur' }],
+    tenantCode: [{ required: true, whitespace: true, message: '请输入高校编号', trigger: 'blur' }],
+    username: [{ required: true, whitespace: true, message: '请输入账号', trigger: 'blur' }],
+    password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
     captcha: [{ validator: checkCaptcha, trigger: 'blur' }]
   })
 
   const userStore = useUserStore()
-  const login = async () => {
-    return await userStore.LoginIn(loginFormData)
+  const submitting = ref(false)
+  const matchingRoles = ref([])
+  const portalRoles = {
+    student: { label: '学生', route: 'studentPortal', sessionKey: 'uni_student_token' },
+    teacher: { label: '教师', route: 'teacherPortal', sessionKey: 'uni_teacher_token' },
+    tenant_admin: { label: '高校管理员' },
+    leave_monitor: { label: '请假监督员' }
   }
-  const submitForm = () => {
-    loginForm.value.validate(async (v) => {
-      if (!v) {
-        // 未通过前端静态验证
-        ElMessage({
-          type: 'error',
-          message: '请正确填写登录信息',
-          showClose: true
+  const portalClient = axios.create({
+    baseURL: import.meta.env.VITE_BASE_API || '/api',
+    timeout: 15000
+  })
+
+  watch(
+    () => [loginFormData.username, loginFormData.tenantCode, loginFormData.password],
+    () => { matchingRoles.value = [] }
+  )
+  watch(platformMode, active => {
+    if (active) loginVerify().catch(() => {})
+  }, { immediate: true })
+
+  const submitForm = async role => {
+    if (submitting.value || (matchingRoles.value.length && !role)) return
+    submitting.value = true
+    try {
+      if (!await loginForm.value.validate().catch(() => false)) return
+      if (platformMode.value) {
+        const ok = await userStore.LoginIn({
+          ...loginFormData,
+          username: loginFormData.username.trim()
         })
-        return false
+        if (ok) sessionStorage.setItem('platformLogin', 'true')
+        else await loginVerify()
+        return
       }
 
-      // 通过验证，请求登陆
-      const flag = await login()
-
-      // 登陆失败，刷新验证码
-      if (!flag) {
-        await loginVerify()
-        return false
+      const payload = {
+        tenantCode: loginFormData.tenantCode,
+        account: loginFormData.username.trim(),
+        password: loginFormData.password,
+        role
       }
-
-      // 登陆成功
-      return true
-    })
+      const { data: result } = await portalClient.post('/uni/portal/login', payload)
+      if (result.code !== 0) throw new Error(result.msg || '登录失败')
+      if (result.data.roles) {
+        if (payload.tenantCode === loginFormData.tenantCode &&
+            payload.account === loginFormData.username.trim() &&
+            payload.password === loginFormData.password) {
+          matchingRoles.value = result.data.roles
+        }
+        return
+      }
+      if (result.data.user) {
+        sessionStorage.removeItem('platformLogin')
+        if (!await userStore.LoginIn(undefined, result)) {
+          throw new Error('登录成功，但工作台加载失败')
+        }
+        return
+      }
+      const destination = portalRoles[result.data.role]
+      sessionStorage.setItem(destination.sessionKey, result.data.token)
+      loginFormData.password = ''
+      await router.replace({ name: destination.route })
+    } catch (error) {
+      ElMessage.error(error.response?.data?.msg || error.message || '登录失败')
+      if (platformMode.value) await loginVerify().catch(() => {})
+    } finally {
+      submitting.value = false
+    }
   }
 
   // 跳转初始化

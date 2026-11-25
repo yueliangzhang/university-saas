@@ -7,6 +7,8 @@
 
 ## Done
 
+- [高校四类账号统一登录](done/university-unified-login.md)
+
 - [高校批量导入列表删除与排序](done/university-record-bulk-delete-sort.md)
 - [教师登录账号与辅导员分配分页](done/university-teacher-panel-pagination.md)
 - [师生门户使用高校编号登录](done/university-code-portal-login.md)

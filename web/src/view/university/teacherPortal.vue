@@ -1,31 +1,8 @@
 <template>
   <div class="teacher-portal uni-ui">
     <div v-if="token" class="topbar"><div class="brand">🎓 高校教师服务平台</div><el-button plain @click="logout">退出登录</el-button></div>
-    <div v-if="!token" class="teacher-login-layout">
-      <section class="teacher-login-intro">
-        <div class="teacher-login-brand"><span class="teacher-brand-mark">🎓</span><span>高校教师服务平台</span></div>
-        <div class="teacher-login-eyebrow">CAMPUS TEACHER SERVICES</div>
-        <h1>教学管理，<br>从这里开始。</h1>
-        <p>统一的教师服务入口，便捷查看负责班级、处理学生请假申请，专注每一天的教学工作。</p>
-        <div class="teacher-login-features"><span>✓ 班级管理</span><span>✓ 高效审批</span><span>✓ 安全访问</span></div>
-      </section>
-      <section class="teacher-login-panel">
-        <div class="teacher-login-card">
-          <div class="teacher-mobile-brand">🎓 高校教师服务平台</div>
-          <h2>欢迎回来</h2>
-          <p class="teacher-login-subtitle">请使用学校管理员为你开通的教师账号登录</p>
-          <el-form label-position="top" @submit.prevent="login">
-            <el-form-item label="高校编号"><el-input v-model.trim="loginForm.tenantCode" maxlength="64" size="large" placeholder="请输入高校编号" /></el-form-item>
-            <el-form-item label="教师工号"><el-input v-model="loginForm.teacherNo" size="large" placeholder="请输入教师工号" autocomplete="username" /></el-form-item>
-            <el-form-item label="登录密码"><el-input v-model="loginForm.password" size="large" type="password" show-password autocomplete="current-password" placeholder="请输入密码" /></el-form-item>
-            <el-button class="teacher-login-submit" native-type="submit" type="primary" size="large" :loading="busy">登录教师平台 <span aria-hidden="true">→</span></el-button>
-          </el-form>
-          <p class="teacher-login-help">忘记密码？请联系本校管理员重置。</p>
-        </div>
-      </section>
-    </div>
-    <div v-else-if="mustChange" style="max-width:440px;margin:60px auto;padding:24px"><el-card><h2>首次登录，请修改密码</h2><el-form label-position="top" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password"/></el-form-item><el-form-item label="新密码（6位）"><el-input v-model="newPassword" type="password"/></el-form-item><el-form-item label="确认新密码"><el-input v-model="confirmPassword" type="password"/></el-form-item><el-button native-type="submit" type="primary">确认修改</el-button><el-button @click="logout">退出</el-button></el-form></el-card></div>
-<main v-else class="main"><div class="welcome"><div><h2>你好，{{me?.name || '老师'}}</h2><p class="muted">工号：{{me?.teacherNo}} · {{me?.title || '教师'}} · 所属学院 ID：{{me?.collegeId}}</p></div><el-button type="primary" :loading="refreshing" @click="refresh">刷新数据</el-button></div>
+    <div v-if="token && mustChange" style="max-width:440px;margin:60px auto;padding:24px"><el-card><h2>首次登录，请修改密码</h2><el-form label-position="top" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password"/></el-form-item><el-form-item label="新密码（6位）"><el-input v-model="newPassword" type="password"/></el-form-item><el-form-item label="确认新密码"><el-input v-model="confirmPassword" type="password"/></el-form-item><el-button native-type="submit" type="primary">确认修改</el-button><el-button @click="logout">退出</el-button></el-form></el-card></div>
+<main v-else-if="token" class="main"><div class="welcome"><div><h2>你好，{{me?.name || '老师'}}</h2><p class="muted">工号：{{me?.teacherNo}} · {{me?.title || '教师'}} · 所属学院 ID：{{me?.collegeId}}</p></div><el-button type="primary" :loading="refreshing" @click="refresh">刷新数据</el-button></div>
       <el-row :gutter="16" class="stats"><el-col :xs="12" :sm="8"><el-card shadow="never"><div class="muted">负责学生（全部）</div><h2>{{studentTotalAll ?? '—'}}</h2></el-card></el-col><el-col :xs="12" :sm="8"><el-card shadow="never"><div class="muted">待审批申请（当前筛选）</div><h2>{{status==='pending'?total:'—'}}</h2></el-card></el-col><el-col :xs="24" :sm="8"><el-card shadow="never"><div class="muted">请假记录（当前筛选）</div><h2>{{total}}</h2></el-card></el-col></el-row>
       <el-card shadow="never" class="section"><template #header><b>我的负责班级</b></template><el-empty v-if="!classes.length" description="管理员尚未分配学生" :image-size="72"/><el-tag v-for="cl in classes" :key="cl.id" style="margin:4px">{{cl.name}}（{{cl.code}}）</el-tag></el-card>
       <el-card shadow="never" class="section"><template #header><div class="section-header"><b>我负责的学生</b><el-select v-model="studentClass" clearable placeholder="全部班级" style="width:190px" @change="studentPage=1;loadStudents()"><el-option v-for="cl in classes" :key="cl.id" :label="cl.name" :value="cl.id"/></el-select></div></template><el-table :data="studentRows" v-loading="studentLoading" empty-text="暂无负责学生"><el-table-column prop="studentNo" label="学号" min-width="110"/><el-table-column prop="name" label="姓名" min-width="110"/><el-table-column prop="className" label="班级" min-width="130"/><el-table-column label="状态" width="100"><template #default="{row}">{{row.status===1?'在读':'停用'}}</template></el-table-column></el-table><el-pagination class="pager" v-model:current-page="studentPage" :page-size="20" :total="studentTotal" layout="total,prev,pager,next" @current-change="loadStudents"/></el-card>
@@ -53,16 +30,21 @@
   </div>
 </template>
 <script setup>
-import {ref,onMounted} from 'vue'
+import {ref,onMounted,watch} from 'vue'
 import {ElMessage,ElMessageBox} from 'element-plus'
 import axios from 'axios'
+import { useRouter } from 'vue-router'
 import { downloadLeaveProof } from '@/utils/leaveProof'
 const base=(import.meta.env.VITE_BASE_API||'/api').replace(/\/$/,'')
 const client=axios.create({baseURL:base,timeout:15000})
 const mustChange = ref(false)
 const confirmPassword = ref('')
 const token=ref(sessionStorage.getItem('uni_teacher_token')||'')
-const loginForm=ref({tenantCode:'',teacherNo:'',password:''}),me=ref(null),classes=ref([]),rows=ref([]),total=ref(0),page=ref(1),status=ref('pending'),selectedClassId=ref(''),loading=ref(false),busy=ref(false),refreshing=ref(false),reviewingId=ref(null)
+const router = useRouter()
+watch(token, value => {
+  if (!value) router.replace({ name: 'Login' })
+})
+const me=ref(null),classes=ref([]),rows=ref([]),total=ref(0),page=ref(1),status=ref('pending'),selectedClassId=ref(''),loading=ref(false),busy=ref(false),refreshing=ref(false),reviewingId=ref(null)
 const studentRows=ref([]),studentPage=ref(1),studentTotal=ref(0),studentTotalAll=ref(null),studentClass=ref(null),studentLoading=ref(false)
 const loadStudents=async()=>{const session=token.value;if(!session)return;studentLoading.value=true;try{const d=await call('/students','get',undefined,{page:studentPage.value,pageSize:20,classId:studentClass.value||undefined});if(token.value!==session)return;studentRows.value=d?.list||[];studentTotal.value=d?.total||0;if(!studentClass.value)studentTotalAll.value=studentTotal.value;else{const all=await call('/students','get',undefined,{page:1,pageSize:1});if(token.value===session)studentTotalAll.value=all?.total??0}}catch(e){if(token.value===session){studentRows.value=[];studentTotal.value=0;studentTotalAll.value=null;ElMessage.error(error(e))}}finally{studentLoading.value=false}}
 const changeDialog=ref(false),oldPassword=ref(''),newPassword=ref('')
@@ -73,7 +55,6 @@ const call=async(url,method='get',data,params)=>{const r=await client({url:`/uni
 const clear=()=>{mustChange.value=false;confirmPassword.value="";oldPassword.value="";newPassword.value="";token.value='';sessionStorage.removeItem('uni_teacher_token');me.value=null;classes.value=[];rows.value=[];total.value=0;selectedClassId.value='';studentRows.value=[];studentTotal.value=0;studentTotalAll.value=null;studentPage.value=1;studentClass.value=null}
 const loadLeaves=async()=>{if(!token.value)return;loading.value=true;try{const d=await call('/leaves','get',undefined,{page:page.value,pageSize:10,status:status.value,...(selectedClassId.value?{classId:selectedClassId.value}:{})});rows.value=d?.list||[];total.value=d?.total||0}catch(e){ElMessage.error(error(e))}finally{loading.value=false}}
 const refresh=async()=>{if(!token.value||refreshing.value)return;refreshing.value=true;try{const profile=await call('/me');mustChange.value=!!profile.mustChangePassword;if(mustChange.value)return;me.value=profile;const d=await call('/classes');classes.value=d?.list||[];if(selectedClassId.value&&!classes.value.some(cl=>String(cl.id)===selectedClassId.value)){selectedClassId.value='';page.value=1}if(studentClass.value&&!classes.value.some(cl=>cl.id===studentClass.value)){studentClass.value=null;studentPage.value=1}await Promise.all([loadLeaves(),loadStudents()])}catch(e){ElMessage.error(error(e));if(e.response?.status===401)clear()}finally{refreshing.value=false}}
-const login=async()=>{if(busy.value)return;if(!loginForm.value.tenantCode.trim()||!loginForm.value.teacherNo.trim()||!loginForm.value.password){ElMessage.warning('请填写有效的高校编号、教师工号和密码');return}busy.value=true;try{const d=await call('/login','post',{tenantCode:loginForm.value.tenantCode.trim(),teacherNo:loginForm.value.teacherNo,password:loginForm.value.password});token.value=d.token;sessionStorage.setItem('uni_teacher_token',d.token);loginForm.value.password='';await refresh()}catch(e){ElMessage.error(error(e))}finally{busy.value=false}}
 const logout=async()=>{try{await call('/logout','post',{})}catch(e){}finally{clear()}}
 const downloadProof = async (row, index) => {
   try {
@@ -168,55 +149,5 @@ body:has(.teacher-portal) .teacher-portal {
   min-height: 100vh;
   max-height: none !important;
   overflow: visible !important;
-}
-</style>
-
-<style scoped>
-/* V17.7.2: responsive portal enhancements; preserve V17.7.1 global scroll fix */
-.teacher-portal.uni-ui { overflow-wrap: anywhere; }
-.teacher-portal.uni-ui .main { min-width: 0; padding-bottom: 64px; }
-.teacher-portal.uni-ui .section { min-width: 0; }
-.teacher-portal.uni-ui .section :deep(.el-card__body) { min-width: 0; }
-.teacher-portal.uni-ui .pager { flex-wrap: wrap; gap: 8px; }
-@media (max-width: 640px) {
-  .teacher-portal.uni-ui .topbar { gap: 12px; }
-  .teacher-portal.uni-ui .brand { font-size: 15px; }
-  .teacher-portal.uni-ui .welcome { padding: 22px 18px; }
-  .teacher-portal.uni-ui .welcome h2 { font-size: 23px; }
-  .teacher-portal.uni-ui .section-header { align-items: stretch; flex-wrap: wrap; }
-  .teacher-portal.uni-ui .section-header :deep(.el-select) { width: 100% !important; max-width: 220px; }
-  .teacher-portal.uni-ui .main { padding: 16px 10px 64px; }
-  .teacher-portal.uni-ui .pager { justify-content: center; }
-  .teacher-portal.uni-ui .section :deep(.el-card__body) { padding: 14px; }
-}
-</style>
-
-<style scoped>
-/* V17.7.2 teacher login visual parity with student portal; authenticated UI untouched. */
-.teacher-portal.uni-ui .teacher-login-layout{display:grid;grid-template-columns:1fr 1fr;min-height:100vh;min-width:0}
-.teacher-portal.uni-ui .teacher-login-intro{background:radial-gradient(circle at 15% 12%,rgba(147,197,253,.18),transparent 35%),linear-gradient(145deg,#132c78,#2563eb 80%);padding:10vh 9%;color:#fff;display:flex;flex-direction:column;justify-content:center;min-width:0}
-.teacher-portal.uni-ui .teacher-login-brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:17px;margin-bottom:54px}
-.teacher-portal.uni-ui .teacher-brand-mark{display:grid;place-items:center;width:58px;height:58px;border-radius:15px;background:rgba(255,255,255,.15);font-size:28px}
-.teacher-portal.uni-ui .teacher-login-eyebrow{font-size:12px;letter-spacing:2.5px;color:#bed3ff;font-weight:700}
-.teacher-portal.uni-ui .teacher-login-intro h1{font-size:clamp(36px,4.5vw,62px);line-height:1.2;margin:22px 0;font-weight:750;letter-spacing:-1.2px}
-.teacher-portal.uni-ui .teacher-login-intro p{max-width:410px;color:#d6e3ff;font-size:15px;line-height:1.9}
-.teacher-portal.uni-ui .teacher-login-features{display:flex;flex-wrap:wrap;gap:22px;margin-top:46px}
-.teacher-portal.uni-ui .teacher-login-features span{font-size:13px;color:#e2eaff}
-.teacher-portal.uni-ui .teacher-login-panel{display:flex;align-items:center;justify-content:center;padding:30px;background:#f8faff;min-width:0}
-.teacher-portal.uni-ui .teacher-login-card{width:min(100%,420px);background:#fff;padding:48px 40px;border:1px solid #e5eaf2;border-radius:18px;box-shadow:0 20px 70px rgba(22,45,94,.09)}
-.teacher-portal.uni-ui .teacher-login-card h2{font-size:28px;font-weight:750;letter-spacing:-.8px;margin:0 0 12px}
-.teacher-portal.uni-ui .teacher-login-subtitle{font-size:13px;line-height:1.7;color:#64748b;margin:0 0 32px}
-.teacher-portal.uni-ui .teacher-login-card :deep(.el-form-item){margin-bottom:23px}
-.teacher-portal.uni-ui .teacher-login-card :deep(.el-form-item__label){font-weight:600;color:#334155}
-.teacher-portal.uni-ui .teacher-login-card :deep(.el-input__wrapper){min-height:40px;border-radius:10px}
-.teacher-portal.uni-ui .teacher-login-submit{width:100%;margin-top:8px;display:flex;gap:9px}
-.teacher-portal.uni-ui .teacher-login-help{text-align:center;color:#98a5b6;font-size:12px;margin:26px 0 0}
-.teacher-portal.uni-ui .teacher-mobile-brand{display:none}
-@media(max-width:760px){
- .teacher-portal.uni-ui .teacher-login-layout{grid-template-columns:1fr}
- .teacher-portal.uni-ui .teacher-login-intro{display:none}
- .teacher-portal.uni-ui .teacher-login-panel{min-height:100vh;padding:18px}
- .teacher-portal.uni-ui .teacher-login-card{padding:35px 25px}
- .teacher-portal.uni-ui .teacher-mobile-brand{display:block;color:#3266e8;font-weight:750;margin-bottom:40px}
 }
 </style>

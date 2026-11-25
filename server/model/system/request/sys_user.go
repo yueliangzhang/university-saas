@@ -20,10 +20,11 @@ type Register struct {
 
 // Login User login structure
 type Login struct {
-	Username  string `json:"username"`  // 用户名
-	Password  string `json:"password"`  // 密码
-	Captcha   string `json:"captcha"`   // 验证码
-	CaptchaId string `json:"captchaId"` // 验证码ID
+	TenantCode string `json:"tenantCode"` // 高校编号
+	Username   string `json:"username"`   // 用户名
+	Password   string `json:"password"`   // 密码
+	Captcha    string `json:"captcha"`    // 验证码
+	CaptchaId  string `json:"captchaId"`  // 验证码ID
 }
 
 // ChangePasswordReq Modify password structure

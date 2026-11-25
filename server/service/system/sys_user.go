@@ -60,6 +60,62 @@ func (userService *UserService) Login(u *system.SysUser) (userInter *system.SysU
 	return &user, err
 }
 
+// UniversityLoginRole maps the two school-scoped system authorities to their memberships.
+func UniversityLoginRole(authorityID uint) string {
+	switch authorityID {
+	case 2001:
+		return "tenant_admin"
+	case 2002:
+		return "leave_monitor"
+	default:
+		return ""
+	}
+}
+
+func (userService *UserService) HasUniversityLoginMembership(user system.SysUser, code string) (bool, error) {
+	var memberships []struct {
+		Code         string
+		Role         string
+		MemberStatus int
+		TenantStatus int
+	}
+	err := global.GVA_DB.Table("uni_memberships m").
+		Select("t.code, m.role, m.status AS member_status, t.status AS tenant_status").
+		Joins("JOIN uni_tenants t ON t.id = m.tenant_id").
+		Where("m.user_id = ?", user.ID).Find(&memberships).Error
+	if err != nil || len(memberships) != 1 {
+		return false, err
+	}
+	member := memberships[0]
+	role := UniversityLoginRole(user.AuthorityId)
+	return role != "" && code != "" && member.Code == code &&
+		member.Role == role && member.MemberStatus == 1 && member.TenantStatus == 1, nil
+}
+
+func (userService *UserService) FindUniversityLoginUser(username, password, code string) (*system.SysUser, error) {
+	var candidate system.SysUser
+	err := global.GVA_DB.Select("id", "authority_id", "enable").
+		Where("username = ? AND authority_id IN ?", username, []uint{2001, 2002}).Take(&candidate).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil || candidate.Enable != 1 {
+		return nil, err
+	}
+	match, err := userService.HasUniversityLoginMembership(candidate, code)
+	if err != nil || !match {
+		return nil, err
+	}
+	user, err := userService.Login(&system.SysUser{Username: username, Password: password})
+	if err != nil {
+		return nil, nil
+	}
+	if user.ID != candidate.ID || user.AuthorityId != candidate.AuthorityId || user.Enable != 1 {
+		return nil, nil
+	}
+	return user, nil
+}
+
 //@author: [piexlmax](https://github.com/piexlmax)
 //@function: ChangePassword
 //@description: 修改用户密码

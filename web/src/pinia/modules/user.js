@@ -60,14 +60,14 @@ export const useUserStore = defineStore('user', () => {
     return res
   }
   /* 登录*/
-  const LoginIn = async (loginInfo) => {
+  const LoginIn = async (loginInfo, authenticatedResponse) => {
     try {
       loadingInstance.value = ElLoading.service({
         fullscreen: true,
         text: '登录中，请稍候...'
       })
 
-      const res = await login(loginInfo)
+      const res = authenticatedResponse ?? await login(loginInfo)
 
       if (res.code !== 0) {
         return false
@@ -123,10 +123,9 @@ export const useUserStore = defineStore('user', () => {
       return
     }
 
+    const loginRoute = sessionStorage.getItem('platformLogin') === 'true' ? 'PlatformLogin' : 'Login'
     await ClearStorage()
-
-    // 把路由定向到登录页，无需等待直接reload
-    router.push({ name: 'Login', replace: true })
+    await router.replace({ name: loginRoute })
     window.location.reload()
   }
   /* 清理数据 */

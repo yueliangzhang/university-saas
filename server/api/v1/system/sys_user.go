@@ -2,6 +2,7 @@ package system
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
@@ -11,6 +12,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/model/system"
 	systemReq "github.com/flipped-aurora/gin-vue-admin/server/model/system/request"
 	systemRes "github.com/flipped-aurora/gin-vue-admin/server/model/system/response"
+	systemService "github.com/flipped-aurora/gin-vue-admin/server/service/system"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
@@ -37,30 +39,10 @@ func (b *BaseApi) Login(c *gin.Context) {
 		return
 	}
 
-	key := c.ClientIP()
-	// 判断验证码是否开启
-	openCaptcha := global.GVA_CONFIG.Captcha.OpenCaptcha               // 是否开启防爆次数
-	openCaptchaTimeOut := global.GVA_CONFIG.Captcha.OpenCaptchaTimeOut // 缓存超时时间
-	v, ok := global.BlackCache.Get(key)
-	if !ok {
-		global.BlackCache.Set(key, 1, time.Second*time.Duration(openCaptchaTimeOut))
-	}
-
-	var oc bool = openCaptcha == 0 || openCaptcha < interfaceToInt(v)
-	if oc && (l.Captcha == "" || l.CaptchaId == "" || !store.Verify(l.CaptchaId, l.Captcha, true)) {
-		// 验证码次数+1
-		global.BlackCache.Increment(key, 1)
-		response.FailWithMessage("验证码错误", c)
-		// 记录登录失败日志
-		loginLogService.CreateLoginLog(system.SysLoginLog{
-			Username:     l.Username,
-			Ip:           c.ClientIP(),
-			Agent:        c.Request.UserAgent(),
-			Status:       false,
-			ErrorMessage: "验证码错误",
-		})
+	if !b.verifyLoginCaptcha(c, l) {
 		return
 	}
+	key := c.ClientIP()
 
 	u := &system.SysUser{Username: l.Username, Password: l.Password}
 	user, err := userService.Login(u)
@@ -95,7 +77,49 @@ func (b *BaseApi) Login(c *gin.Context) {
 		})
 		return
 	}
+	if systemService.UniversityLoginRole(user.AuthorityId) != "" {
+		code := strings.TrimSpace(l.TenantCode)
+		if code == "" {
+			response.FailWithMessage("请输入高校编号", c)
+			return
+		}
+		ok, err := userService.HasUniversityLoginMembership(*user, code)
+		if err != nil || !ok {
+			response.FailWithMessage("高校编号、账号或密码错误", c)
+			return
+		}
+	}
 	b.TokenNext(c, *user)
+}
+
+// verifyLoginCaptcha applies the platform login captcha policy.
+func (b *BaseApi) verifyLoginCaptcha(c *gin.Context, l systemReq.Login) bool {
+	key := c.ClientIP()
+	// 判断验证码是否开启
+	openCaptcha := global.GVA_CONFIG.Captcha.OpenCaptcha               // 是否开启防爆次数
+	openCaptchaTimeOut := global.GVA_CONFIG.Captcha.OpenCaptchaTimeOut // 缓存超时时间
+	v, ok := global.BlackCache.Get(key)
+	if !ok {
+		global.BlackCache.Set(key, 1, time.Second*time.Duration(openCaptchaTimeOut))
+	}
+
+	var oc bool = openCaptcha == 0 || openCaptcha < interfaceToInt(v)
+	if oc && (l.Captcha == "" || l.CaptchaId == "" || !store.Verify(l.CaptchaId, l.Captcha, true)) {
+		// 验证码次数+1
+		global.BlackCache.Increment(key, 1)
+		response.FailWithMessage("验证码错误", c)
+		// 记录登录失败日志
+		loginLogService.CreateLoginLog(system.SysLoginLog{
+			Username:     l.Username,
+			Ip:           c.ClientIP(),
+			Agent:        c.Request.UserAgent(),
+			Status:       false,
+			ErrorMessage: "验证码错误",
+		})
+		return false
+	}
+
+	return true
 }
 
 // TokenNext 登录以后签发jwt
@@ -108,11 +132,11 @@ func (b *BaseApi) TokenNext(c *gin.Context, user system.SysUser) {
 	}
 	// 记录登录成功日志
 	loginLogService.CreateLoginLog(system.SysLoginLog{
-		Username: user.Username,
-		Ip:       c.ClientIP(),
-		Agent:    c.Request.UserAgent(),
-		Status:   true,
-		UserID:   user.ID,
+		Username:     user.Username,
+		Ip:           c.ClientIP(),
+		Agent:        c.Request.UserAgent(),
+		Status:       true,
+		UserID:       user.ID,
 		ErrorMessage: "登录成功",
 	})
 	if !global.GVA_CONFIG.System.UseMultipoint {

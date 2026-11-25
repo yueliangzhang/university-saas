@@ -13,7 +13,7 @@ Nprogress.configure({
 })
 
 // 白名单路由
-const WHITE_LIST = ['Login', 'Init']
+const WHITE_LIST = ['Login', 'PlatformLogin', 'Init']
 
 function isExternalUrl(val) {
   return typeof val === 'string' && /^(https?:)?\/\//.test(val)
@@ -166,11 +166,13 @@ router.beforeEach(async (to, from) => {
   // 设置页面标题
   document.title = getPageTitle(to.meta.title, to)
 
-  // V13：学生登录页面独立于 GVA 管理员认证
-  if (to.path === '/student/login') {
-    return true
+  if (to.name === 'studentPortal' && !sessionStorage.getItem('uni_student_token')) {
+    return { name: 'Login' }
   }
-  
+  if (to.name === 'teacherPortal' && !sessionStorage.getItem('uni_teacher_token')) {
+    return { name: 'Login' }
+  }
+
   if (to.meta.client) {
     return true
   }
