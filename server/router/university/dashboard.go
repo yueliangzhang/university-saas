@@ -10,6 +10,10 @@ import (
 )
 
 func dashboardAnalytics(c *gin.Context) {
+	if c.Query("mode") == "report" {
+		universityLeaveReport(c)
+		return
+	}
 	tenant := c.MustGet("monitorTenant")
 	days, e := strconv.Atoi(c.DefaultQuery("days", "7"))
 	if e != nil || (days != 7 && days != 30 && days != 90) {
