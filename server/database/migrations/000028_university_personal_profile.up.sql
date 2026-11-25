@@ -10,7 +10,7 @@ WHERE m.name = 'person' AND m.component = 'view/person/person.vue'
 );
 
 INSERT INTO casbin_rule (ptype, v0, v1, v2)
-SELECT 'p', a.authority_id, permissions.path, permissions.method
+SELECT 'p', CAST(a.authority_id AS CHAR CHARACTER SET utf8mb4), permissions.path, permissions.method
 FROM sys_authorities a
 CROSS JOIN (
     SELECT '/user/setSelfInfo' AS path, 'PUT' AS method
@@ -19,6 +19,11 @@ CROSS JOIN (
 WHERE a.deleted_at IS NULL AND a.authority_id IN (2001, 2002)
   AND NOT EXISTS (
     SELECT 1 FROM casbin_rule c
-    WHERE c.ptype = 'p' AND c.v0 = CAST(a.authority_id AS CHAR)
-      AND c.v1 = permissions.path AND c.v2 = permissions.method
+    WHERE c.ptype = 'p'
+      AND CONVERT(c.v0 USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CAST(a.authority_id AS CHAR CHARACTER SET utf8mb4) COLLATE utf8mb4_unicode_ci
+      AND CONVERT(c.v1 USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(permissions.path USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      AND CONVERT(c.v2 USING utf8mb4) COLLATE utf8mb4_unicode_ci =
+          CONVERT(permissions.method USING utf8mb4) COLLATE utf8mb4_unicode_ci
 );
