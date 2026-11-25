@@ -20,7 +20,7 @@
                 {{ $GIN_VUE_ADMIN.appName }}
               </p>
               <p class="text-center text-sm font-normal text-gray-500 mt-2.5">
-                {{ platformMode ? '平台管理登录' : '高校统一登录' }}
+                {{ platformMode ? '平台管理登录' : schoolName || '高校统一登录' }}
               </p>
             </div>
             <el-form
@@ -218,6 +218,27 @@
   watch(platformMode, active => {
     if (active) loginVerify().catch(() => {})
   }, { immediate: true })
+
+  const schoolName = ref('')
+  watch(() => [platformMode.value, loginFormData.tenantCode], ([platform, code], _, onCleanup) => {
+    schoolName.value = ''
+    if (platform || !code) return
+    const request = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await portalClient.get('/uni/portal/school', {
+          params: { code }, signal: request.signal
+        })
+        if (!request.signal.aborted && data.code === 0) schoolName.value = data.data?.name || ''
+      } catch {
+        // The school lookup is optional for signing in.
+      }
+    }, 350)
+    onCleanup(() => {
+      clearTimeout(timer)
+      request.abort()
+    })
+  })
 
   const submitForm = async role => {
     if (submitting.value || (matchingRoles.value.length && !role)) return

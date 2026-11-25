@@ -50,14 +50,17 @@ func TestStudentPortalLoginThenMe(t *testing.T) {
 	}
 	for _, statement := range []string{
 		"CREATE TABLE uni_memberships (tenant_id INTEGER, user_id INTEGER, role TEXT, status INTEGER, advisor_teacher_id INTEGER)",
-		"CREATE TABLE uni_tenants (id INTEGER PRIMARY KEY, code TEXT UNIQUE, status INTEGER)",
+		"CREATE TABLE uni_tenants (id INTEGER PRIMARY KEY, code TEXT UNIQUE, status INTEGER, name TEXT)",
+		"CREATE TABLE uni_classes (id INTEGER PRIMARY KEY, tenant_id INTEGER, major_id INTEGER, name TEXT)",
+		"CREATE TABLE uni_majors (id INTEGER PRIMARY KEY, tenant_id INTEGER, college_id INTEGER, name TEXT)",
+		"CREATE TABLE uni_colleges (id INTEGER PRIMARY KEY, tenant_id INTEGER, name TEXT)",
 		"CREATE TABLE uni_students (id INTEGER PRIMARY KEY, tenant_id INTEGER, status INTEGER, student_no TEXT, name TEXT, class_id INTEGER, enrollment_year INTEGER, advisor_id INTEGER)",
 		"CREATE TABLE uni_teachers (id INTEGER PRIMARY KEY, tenant_id INTEGER, name TEXT, teacher_no TEXT, status INTEGER)",
 		"CREATE TABLE uni_student_accounts (id INTEGER PRIMARY KEY, tenant_id INTEGER, student_id INTEGER, password_hash TEXT, status INTEGER, must_change_password BOOLEAN, failed_attempts INTEGER, locked_until DATETIME, last_login_at DATETIME)",
 		"CREATE TABLE uni_student_sessions (tenant_id INTEGER, account_id INTEGER, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME)",
 		"CREATE TABLE uni_teacher_accounts (id INTEGER PRIMARY KEY, tenant_id INTEGER, teacher_id INTEGER, password_hash TEXT, status INTEGER, must_change_password BOOLEAN, failed_attempts INTEGER, locked_until DATETIME, last_login_at DATETIME)",
 		"CREATE TABLE uni_teacher_sessions (tenant_id INTEGER, account_id INTEGER, token_hash TEXT, expires_at DATETIME, revoked_at DATETIME)",
-		"INSERT INTO uni_tenants VALUES (1, '0007', 1), (9, 'OTHER', 1)",
+		"INSERT INTO uni_tenants VALUES (1, '0007', 1, 'Test University'), (9, 'OTHER', 1, 'Other University')",
 		"INSERT INTO uni_students VALUES (2, 1, 1, 'S001', 'Test Student', 3, 2026, NULL)",
 		"INSERT INTO uni_teachers VALUES (4, 1, 'Test Teacher', 'T001', 1)",
 	} {

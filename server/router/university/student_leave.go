@@ -36,6 +36,33 @@ func studentLeaveList(c *gin.Context) {
 		}
 		q = q.Where("status=?", status)
 	}
+	from, to := c.Query("from"), c.Query("to")
+	if from != "" || to != "" {
+		start, startErr := time.Parse(time.DateOnly, from)
+		end, endErr := time.Parse(time.DateOnly, to)
+		if startErr != nil || endErr != nil || end.Before(start) || end.Year() >= 9999 {
+			studentAuthError(c, 400, "日期范围不合法")
+			return
+		}
+		q = q.Where("l.end_at > ? AND l.start_at < ?", start.Format(time.DateTime), end.AddDate(0, 0, 1).Format(time.DateTime))
+	}
+	result := gin.H{"page": page, "pageSize": size}
+	if c.Query("includeSummary") == "true" {
+		var summary struct {
+			Total    int64 `json:"total"`
+			Pending  int64 `json:"pending"`
+			Approved int64 `json:"approved"`
+		}
+		err := global.GVA_DB.WithContext(c.Request.Context()).Table("uni_leave_requests").
+			Where("tenant_id=? AND student_id=?", tid, sid).
+			Select("COUNT(*) AS total, COUNT(CASE WHEN status='pending' THEN 1 END) AS pending, COUNT(CASE WHEN status='approved' THEN 1 END) AS approved").
+			Scan(&summary).Error
+		if err != nil {
+			studentAuthError(c, 500, "统计请假失败")
+			return
+		}
+		result["summary"] = summary
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		studentAuthError(c, 500, "查询失败")
@@ -51,7 +78,8 @@ func studentLeaveList(c *gin.Context) {
 		studentAuthError(c, 500, "查询失败")
 		return
 	}
-	studentAuthOK(c, gin.H{"list": rows, "total": total, "page": page, "pageSize": size})
+	result["list"], result["total"] = rows, total
+	studentAuthOK(c, result)
 }
 
 func studentLeaveCreate(c *gin.Context) {

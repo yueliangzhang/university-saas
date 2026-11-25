@@ -7,6 +7,8 @@
 
 ## Done
 
+- [V17.8.0 学生端优化](done/university-student-portal-v17.8.0.md)
+
 - [学生登录账号列表分页、筛选与排序](done/university-student-account-list.md)
 
 - [高校管理员与辅导员切换](done/university-advisor-workspace.md)

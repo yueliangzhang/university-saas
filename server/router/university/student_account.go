@@ -305,12 +305,23 @@ func studentPortalMe(c *gin.Context) {
 	var row struct {
 		StudentNo      string  `json:"studentNo"`
 		Name           string  `json:"name"`
+		SchoolName     string  `json:"schoolName"`
+		ClassName      string  `json:"className"`
+		MajorName      string  `json:"majorName"`
+		CollegeName    string  `json:"collegeName"`
 		ClassID        uint64  `json:"classId"`
 		AdvisorID      *uint64 `json:"advisorId"`
 		AdvisorName    string  `json:"advisorName"`
 		EnrollmentYear int     `json:"enrollmentYear"`
 	}
-	err := global.GVA_DB.Table("uni_students s").Select("s.student_no,s.name,s.class_id,s.enrollment_year,s.advisor_id,COALESCE(t.name, '') advisor_name").Joins("LEFT JOIN uni_teachers t ON t.tenant_id=s.tenant_id AND t.id=s.advisor_id").Where("s.tenant_id=? AND s.id=?", tid, sid).Take(&row).Error
+	err := global.GVA_DB.WithContext(c.Request.Context()).Table("uni_students s").
+		Select("s.student_no,s.name,s.class_id,s.enrollment_year,s.advisor_id,COALESCE(t.name,'') advisor_name,u.name school_name,COALESCE(cl.name,'') class_name,COALESCE(m.name,'') major_name,COALESCE(co.name,'') college_name").
+		Joins("JOIN uni_tenants u ON u.id=s.tenant_id").
+		Joins("LEFT JOIN uni_teachers t ON t.tenant_id=s.tenant_id AND t.id=s.advisor_id").
+		Joins("LEFT JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").
+		Joins("LEFT JOIN uni_majors m ON m.tenant_id=s.tenant_id AND m.id=cl.major_id").
+		Joins("LEFT JOIN uni_colleges co ON co.tenant_id=s.tenant_id AND co.id=m.college_id").
+		Where("s.tenant_id=? AND s.id=?", tid, sid).Take(&row).Error
 	if err != nil {
 		studentAuthError(c, 404, "学生档案不存在")
 		return
@@ -372,6 +383,22 @@ func studentPortalLogout(c *gin.Context) {
 	studentAuthOK(c, gin.H{"loggedOut": true})
 }
 
+func portalSchoolName(c *gin.Context) {
+	code := strings.TrimSpace(c.Query("code"))
+	if code == "" || len(code) > 64 {
+		studentAuthError(c, 400, "高校编号不合法")
+		return
+	}
+	var school struct{ Name string }
+	err := global.GVA_DB.WithContext(c.Request.Context()).Table("uni_tenants").
+		Select("name").Where("code=? AND status=1", code).Take(&school).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		studentAuthError(c, 500, "查询高校失败")
+		return
+	}
+	studentAuthOK(c, gin.H{"name": school.Name})
+}
+
 // Register under GVA's PRIVATE group (JWT + Casbin); student sessions cannot call these.
 func InitStudentAccountRouter(privateGroup *gin.RouterGroup) {
 	g := privateGroup.Group("uni").Use(middleware.TenantAuth())
@@ -384,6 +411,7 @@ func InitStudentAccountRouter(privateGroup *gin.RouterGroup) {
 // Register under GVA's PUBLIC group, not the JWT-protected private group.
 func InitStudentPortalRouter(publicGroup *gin.RouterGroup) {
 	publicGroup.POST("/uni/portal/login", unifiedPortalLogin)
+	publicGroup.GET("/uni/portal/school", portalSchoolName)
 	g := publicGroup.Group("uni/student-portal")
 	g.POST("/login", studentPortalLogin)
 	protected := g.Group("").Use(studentPortalAuth())

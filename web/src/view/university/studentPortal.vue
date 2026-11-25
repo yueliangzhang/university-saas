@@ -1,12 +1,12 @@
 <template>
   <div class="student-portal uni-ui">
     <div v-if="token && mustChange" style="max-width:440px;margin:60px auto;padding:24px"><el-card><h2>首次登录，请修改密码</h2><el-form label-position="top" @submit.prevent="changePassword"><el-form-item label="当前密码"><el-input v-model="oldPassword" type="password"/></el-form-item><el-form-item label="新密码（6位）"><el-input v-model="newPassword" type="password"/></el-form-item><el-form-item label="确认新密码"><el-input v-model="confirmPassword" type="password"/></el-form-item><el-button native-type="submit" type="primary">确认修改</el-button><el-button @click="logout">退出</el-button></el-form></el-card></div>
-<template v-else-if="token">
+<template v-else-if="token && me">
       <el-container class="app-shell">
         <el-aside class="sidebar" width="236px">
           <div class="sidebar-brand"><span class="brand-icon"><el-icon><School /></el-icon></span><span>学生服务平台<small>STUDENT PORTAL</small></span></div>
           <div class="nav-label">工作台</div>
-          <button v-for="item in navigation" :key="item.key" class="nav-item" :class="{active:activeTab===item.key}" @click="activeTab=item.key">
+          <button v-for="item in navigation" :key="item.key" class="nav-item" :class="{active:activeTab===item.key}" :aria-current="activeTab === item.key ? 'page' : undefined" @click="navigate(item.key)">
             <el-icon :size="18"><component :is="item.icon" /></el-icon><span>{{item.label}}</span>
           </button>
           <div class="sidebar-bottom">
@@ -17,13 +17,13 @@
 
         <el-container class="main-container">
           <el-header class="topbar">
-            <div class="topbar-left"><el-icon class="topbar-icon"><School /></el-icon><span>高校学生服务平台</span><span class="topbar-separator">/</span><strong>{{ currentTabLabel }}</strong></div>
-            <div class="topbar-right"><el-tag type="success" effect="plain" round>已登录</el-tag><el-avatar :size="32">{{ (me?.name || '学').slice(0,1) }}</el-avatar></div>
+            <div class="topbar-left"><el-icon class="topbar-icon"><School /></el-icon><span>{{ me.schoolName || '高校学生服务平台' }}</span><span class="topbar-separator">/</span><strong>{{ currentTabLabel }}</strong></div>
+            <div class="topbar-right"><el-avatar :size="32">{{ (me?.name || '学').slice(0,1) }}</el-avatar></div>
           </el-header>
           <el-main class="content">
             <template v-if="activeTab==='dashboard'">
               <div class="welcome-card">
-                <div><div class="welcome-eyebrow">STUDENT DASHBOARD</div><h1>你好，{{me?.name||'同学'}} <span class="wave">👋</span></h1><p>欢迎回来。你可以在这里管理请假申请，及时了解审批进度。</p><el-button type="primary" size="large" @click="openLeaveDialog"><el-icon><Plus /></el-icon> 发起请假申请</el-button></div>
+                <div><h1>你好，{{me?.name||'同学'}}</h1><p>{{ [me.majorName, me.className].filter(Boolean).join(' · ') || me.studentNo }}</p><el-button type="primary" size="large" @click="openLeaveDialog"><el-icon><Plus /></el-icon> 发起请假申请</el-button></div>
                 <div class="welcome-decoration"><el-icon :size="90"><School /></el-icon></div>
               </div>
               <div class="stats-grid">
@@ -31,50 +31,52 @@
               </div>
               <div class="section-card">
                 <div class="section-header"><div><h2>最近请假记录</h2><p>随时了解申请的最新审批状态</p></div><el-button text type="primary" @click="activeTab='leaves'">查看全部 <el-icon><Right /></el-icon></el-button></div>
-                <el-table v-loading="leaveLoading" :data="leaveRows.slice(0,5)" class="data-table" empty-text="暂无请假记录，点击上方按钮提交第一条申请">
-                  <el-table-column label="请假类型" min-width="95"><template #default="{row}"><strong>{{leaveTypes[row.leaveType]||row.leaveType}}</strong></template></el-table-column>
-                  <el-table-column label="请假时间" min-width="230"><template #default="{row}">{{leaveFmt(row.startAt)}} 至 {{leaveFmt(row.endAt)}}</template></el-table-column>
-                  <el-table-column prop="reason" label="请假原因" min-width="130" show-overflow-tooltip />
-                  <el-table-column label="状态" width="108"><template #default="{row}"><el-tag :type="statusType(row.status)" effect="light" round>{{leaveStatuses[row.status]||row.status}}</el-tag></template></el-table-column>
-                </el-table>
+                <el-skeleton v-if="dashboardLoading" :rows="3" animated />
+                <el-alert v-else-if="dashboardError" :title="dashboardError" type="error" :closable="false">
+                  <el-button link @click="loadDashboard">重试</el-button>
+                </el-alert>
+                <el-empty v-else-if="!recentLeaves.length" description="暂无请假记录" :image-size="64" />
+                <button v-for="row in recentLeaves" :key="row.id" class="leave-card" @click="selectedLeave = row">
+                  <strong>{{ leaveTypes[row.leaveType] || row.leaveType }}</strong>
+                  <el-tag :type="statusType(row.status)" round>{{ leaveStatuses[row.status] }}</el-tag>
+                  <span>{{ leaveFmt(row.startAt) }} 至 {{ leaveFmt(row.endAt) }}</span>
+                </button>
               </div>
             </template>
 
             <template v-else-if="activeTab==='leaves'">
-              <div class="page-heading"><div><h1>我的请假</h1><p>管理请假申请，查看审批结果和历史记录</p></div><el-button type="primary" @click="openLeaveDialog"><el-icon><Plus /></el-icon> 申请请假</el-button></div>
-              <div class="stats-grid compact-stats"><div v-for="stat in stats" :key="stat.key" class="stat-card"><div class="stat-icon" :class="stat.key"><el-icon :size="20"><component :is="stat.icon" /></el-icon></div><div><div class="stat-label">{{stat.label}}</div><div class="stat-value">{{stat.value}}</div></div></div></div>
+              <div class="page-heading"><h1>请假记录</h1><el-button type="primary" @click="openLeaveDialog">申请请假</el-button></div>
               <div class="section-card">
-                <div class="section-header filters"><div><h2>申请记录</h2><p>共 {{leaveTotal}} 条记录</p></div><div class="filter-actions"><el-select v-model="statusFilter" placeholder="全部状态" style="width:136px" @change="leavePage=1"><el-option label="全部状态" value="all"/><el-option v-for="(label,key) in leaveStatuses" :key="key" :label="label" :value="key"/></el-select><el-button :loading="leaveLoading" @click="refreshLeaves"><el-icon><Refresh /></el-icon> 刷新</el-button></div></div>
-                <el-table v-loading="leaveLoading" :data="filteredLeaveRows" class="data-table" empty-text="当前没有符合条件的请假记录">
-                  <el-table-column label="类型" width="90"><template #default="{row}"><strong>{{leaveTypes[row.leaveType]||row.leaveType}}</strong></template></el-table-column>
-                  <el-table-column label="开始时间" min-width="150"><template #default="{row}">{{leaveFmt(row.startAt)}}</template></el-table-column>
-                  <el-table-column label="结束时间" min-width="150"><template #default="{row}">{{leaveFmt(row.endAt)}}</template></el-table-column>
-                  <el-table-column prop="reason" label="请假原因" min-width="170" show-overflow-tooltip />
-                  <el-table-column label="审批状态" width="105"><template #default="{row}"><el-tag :type="statusType(row.status)" round>{{leaveStatuses[row.status]||row.status}}</el-tag></template></el-table-column>
-                  <el-table-column prop="reviewNote" label="审批备注" min-width="150" show-overflow-tooltip><template #default="{row}">{{row.reviewNote||'—'}}</template></el-table-column>
-                  <el-table-column label="证明" width="105">
-                    <template #default="{row}">
-                      <el-dropdown v-if="row.hasProof" trigger="click" @command="index => downloadProof(row, index)">
-                        <el-button type="primary" link>下载证明</el-button>
-                        <template #dropdown>
-                          <el-dropdown-menu>
-                            <el-dropdown-item v-for="index in (row.proofCount ?? 1)" :key="index" :command="index">附件 {{ index }}</el-dropdown-item>
-                          </el-dropdown-menu>
-                        </template>
-                      </el-dropdown>
-                      <span v-else>—</span>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="85" fixed="right"><template #default="{row}"><el-button v-if="row.status==='pending'" type="danger" link @click="cancelLeave(row)">撤销</el-button><span v-else class="muted">—</span></template></el-table-column>
-                </el-table>
-                <div class="pagination"><el-pagination v-model:current-page="leavePage" :page-size="10" :total="leaveTotal" layout="total, prev, pager, next" @current-change="loadLeaves" /></div>
+                <div class="record-filters">
+                  <el-select v-model="statusFilter" aria-label="审批状态" @change="refreshLeaves">
+                    <el-option label="全部状态" value="all" />
+                    <el-option v-for="(label, key) in leaveStatuses" :key="key" :label="label" :value="key" />
+                  </el-select>
+                  <label>开始日期 <input v-model="dateFrom" type="date" :max="dateTo || undefined" @change="applyDates" /></label>
+                  <label>结束日期 <input v-model="dateTo" type="date" :min="dateFrom || undefined" @change="applyDates" /></label>
+                  <el-button v-if="dateFrom || dateTo" @click="clearDates">清除日期</el-button>
+                </div>
+                <p v-if="dateError" class="date-error" role="alert">{{ dateError }}</p>
+                <el-skeleton v-if="leaveLoading" :rows="4" animated />
+                <el-alert v-else-if="recordsError" :title="recordsError" type="error" :closable="false">
+                  <el-button link @click="loadLeaves">重试</el-button>
+                </el-alert>
+                <el-empty v-else-if="!leaveRows.length" description="暂无符合条件的请假记录" :image-size="64" />
+                <button v-else v-for="row in leaveRows" :key="row.id" class="leave-card" @click="selectedLeave = row">
+                  <strong>{{ leaveTypes[row.leaveType] || row.leaveType }}</strong>
+                  <el-tag :type="statusType(row.status)" round>{{ leaveStatuses[row.status] }}</el-tag>
+                  <span>{{ leaveFmt(row.startAt) }} 至 {{ leaveFmt(row.endAt) }}</span>
+                </button>
+                <div v-if="leaveTotal > 10" class="pagination">
+                  <el-pagination v-model:current-page="leavePage" :page-size="10" :total="leaveTotal"
+                    :pager-count="5" layout="prev, pager, next" @current-change="loadLeaves" />
+                </div>
               </div>
-              <p v-if="statusFilter!=='all'" class="filter-note">当前状态筛选仅作用于本页记录；如需查看其他记录，请翻页。</p>
             </template>
 
             <template v-else-if="activeTab==='profile'">
               <div class="page-heading"><div><h1>个人中心</h1><p>查看你的在校基本信息</p></div></div>
-              <div class="section-card profile-card"><div class="profile-banner"><el-avatar :size="66">{{ (me?.name||'学').slice(0,1) }}</el-avatar><div><h2>{{me?.name||'学生'}}</h2><p>学号 {{me?.studentNo||'—'}}</p></div></div><el-descriptions :column="profileColumns" border class="profile-details"><el-descriptions-item label="姓名">{{me?.name||'—'}}</el-descriptions-item><el-descriptions-item label="学号">{{me?.studentNo||'—'}}</el-descriptions-item><el-descriptions-item label="班级 ID">{{me?.classId??'—'}}</el-descriptions-item><el-descriptions-item label="所属辅导员">{{me?.advisorName||'暂未分配'}}</el-descriptions-item><el-descriptions-item label="入学年份">{{me?.enrollmentYear||'—'}}</el-descriptions-item></el-descriptions><p class="muted profile-hint">如需修改学籍信息，请联系学校管理员。</p></div>
+              <div class="section-card profile-card"><div class="profile-banner"><el-avatar :size="66">{{ (me?.name||'学').slice(0,1) }}</el-avatar><div><h2>{{me?.name||'学生'}}</h2><p>学号 {{me?.studentNo||'—'}}</p></div></div><el-descriptions :column="profileColumns" border class="profile-details"><el-descriptions-item label="姓名">{{me?.name||'—'}}</el-descriptions-item><el-descriptions-item label="学号">{{me?.studentNo||'—'}}</el-descriptions-item><el-descriptions-item label="高校">{{me.schoolName || '—'}}</el-descriptions-item><el-descriptions-item label="学院">{{me.collegeName || '—'}}</el-descriptions-item><el-descriptions-item label="专业">{{me.majorName || '—'}}</el-descriptions-item><el-descriptions-item label="班级">{{me.className || '—'}}</el-descriptions-item><el-descriptions-item label="所属辅导员">{{me?.advisorName||'暂未分配'}}</el-descriptions-item><el-descriptions-item label="入学年份">{{me?.enrollmentYear||'—'}}</el-descriptions-item></el-descriptions><p class="muted profile-hint">如需修改学籍信息，请联系学校管理员。</p><div class="profile-actions"><el-button @click="activeTab='security'">修改密码</el-button><el-button @click="appStore.toggleTheme(!appStore.isDark)">{{ appStore.isDark ? '浅色模式' : '深色模式' }}</el-button><el-button @click="logout">退出登录</el-button></div></div>
             </template>
 
             <template v-else>
@@ -85,14 +87,21 @@
         </el-container>
       </el-container>
 
-      <nav class="mobile-nav" aria-label="学生服务导航"><button v-for="item in navigation" :key="item.key" :class="{active:activeTab===item.key}" @click="activeTab=item.key"><el-icon :size="20"><component :is="item.icon" /></el-icon><span>{{item.shortLabel}}</span></button><button @click="logout"><el-icon :size="20"><SwitchButton /></el-icon><span>退出</span></button></nav>
+      <nav class="mobile-nav" aria-label="学生服务导航"><button v-for="item in navigation" :key="item.key" :class="{active:activeTab===item.key}" :aria-current="activeTab === item.key ? 'page' : undefined" @click="navigate(item.key)"><el-icon :size="20"><component :is="item.icon" /></el-icon><span>{{item.shortLabel}}</span></button></nav>
 
-      <el-dialog v-model="leaveDialog" title="申请请假" class="leave-dialog" width="min(560px, 94vw)" append-to-body destroy-on-close>
-        <el-alert title="请如实填写请假信息，提交后由学校管理员审批。" type="info" :closable="false" class="dialog-alert" />
+      <el-dialog v-model="leaveDialog" title="申请请假" :close-on-click-modal="!leaveSaving" :close-on-press-escape="!leaveSaving" :show-close="!leaveSaving" class="leave-dialog" width="min(560px, 94vw)" append-to-body destroy-on-close>
+        <div class="application-advisor">
+          <span>审批辅导员</span><strong>{{ me.advisorName || '暂未分配' }}</strong>
+        </div>
         <el-form label-position="top" @submit.prevent="submitLeave">
-          <el-form-item label="请假类型" required :error="leaveErrors.leaveType"><el-select v-model="leaveForm.leaveType" style="width:100%" @change="delete leaveErrors.leaveType"><el-option label="事假" value="personal"/><el-option label="病假" value="sick"/><el-option label="其他" value="other"/></el-select></el-form-item>
-          <el-form-item label="开始时间" required :error="leaveErrors.startAt"><el-date-picker v-model="leaveForm.startAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择开始时间" @change="clearLeaveTimeErrors"/></el-form-item>
-          <el-form-item label="结束时间" required :error="leaveErrors.endAt"><el-date-picker v-model="leaveForm.endAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择结束时间" @change="clearLeaveTimeErrors"/></el-form-item>
+          <el-form-item label="请假类型" required :error="leaveErrors.leaveType">
+            <el-radio-group v-model="leaveForm.leaveType" @change="delete leaveErrors.leaveType">
+              <el-radio-button v-for="(label, key) in leaveTypes" :key="key" :value="key">{{ label }}</el-radio-button>
+            </el-radio-group>
+          </el-form-item>
+          <el-form-item label="开始时间" required :error="leaveErrors.startAt"><el-date-picker v-model="leaveForm.startAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择开始时间" :disabled-date="beforeToday" @change="clearLeaveTimeErrors"/></el-form-item>
+          <el-form-item label="结束时间" required :error="leaveErrors.endAt"><el-date-picker v-model="leaveForm.endAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" placeholder="请选择结束时间" :disabled-date="beforeStartDate" @change="clearLeaveTimeErrors"/></el-form-item>
+          <p v-if="leaveDuration" class="application-duration">请假时长 <strong>{{ leaveDuration }}</strong></p>
           <el-form-item label="请假原因" required :error="leaveErrors.reason"><el-input v-model="leaveForm.reason" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="请简要说明请假原因" @input="delete leaveErrors.reason"/></el-form-item>
           <el-form-item label="证明文件（选填）">
             <input type="file" multiple aria-label="证明文件（选填）" accept=".pdf,.jpg,.jpeg,.png" :disabled="leaveSaving" @change="selectProof" />
@@ -105,40 +114,74 @@
             </ul>
           </el-form-item>
         </el-form>
-        <template #footer><el-button @click="leaveDialog=false">取消</el-button><el-button type="primary" :loading="leaveSaving" :disabled="leaveSaving" @click="submitLeave">提交申请</el-button></template>
+        <template #footer><el-button :disabled="leaveSaving" @click="leaveDialog=false">取消</el-button><el-button type="primary" :loading="leaveSaving" :disabled="leaveSaving" @click="submitLeave">提交申请</el-button></template>
+      </el-dialog>
+      <el-dialog :model-value="Boolean(selectedLeave)" title="请假详情" width="min(560px, 94vw)"
+        @update:model-value="value => { if (!value) selectedLeave = null }">
+        <dl v-if="selectedLeave" class="leave-details">
+          <dt>请假类型</dt><dd>{{ leaveTypes[selectedLeave.leaveType] }}</dd>
+          <dt>审批状态</dt><dd>{{ leaveStatuses[selectedLeave.status] }}</dd>
+          <dt>开始时间</dt><dd>{{ leaveFmt(selectedLeave.startAt) }}</dd>
+          <dt>结束时间</dt><dd>{{ leaveFmt(selectedLeave.endAt) }}</dd>
+          <dt>请假时长</dt><dd>{{ formatDuration(selectedLeave.startAt, selectedLeave.endAt) }}</dd>
+          <dt>提交时间</dt><dd>{{ leaveFmt(selectedLeave.createdAt) || '—' }}</dd>
+          <dt>请假原因</dt><dd>{{ selectedLeave.reason }}</dd>
+          <dt>审批时间</dt><dd>{{ leaveFmt(selectedLeave.reviewedAt) || '—' }}</dd>
+          <dt>审批意见</dt><dd>{{ selectedLeave.reviewNote || '—' }}</dd>
+          <dt v-if="selectedLeave.hasProof">证明文件</dt>
+          <dd v-if="selectedLeave.hasProof">
+            <el-button v-for="index in (selectedLeave.proofCount || 1)" :key="index"
+              link type="primary" @click="downloadProof(selectedLeave, index)">附件 {{ index }}</el-button>
+          </dd>
+        </dl>
+        <template #footer>
+          <el-button @click="selectedLeave = null">关闭</el-button>
+          <el-button v-if="selectedLeave?.status === 'pending'" type="danger" plain
+            :loading="cancelling" @click="cancelLeave(selectedLeave)">撤销申请</el-button>
+        </template>
       </el-dialog>
     </template>
+    <section v-else-if="token" class="profile-loading" aria-live="polite">
+      <el-skeleton v-if="profileLoading" :rows="4" animated />
+      <el-alert v-else-if="profileError" :title="profileError" type="error" :closable="false">
+        <el-button link @click="initialize">重试</el-button>
+      </el-alert>
+    </section>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { School, CircleCheck, Clock, Lock, Right, Plus, House, Calendar, User, SwitchButton, Refresh, Files, CircleClose } from '@element-plus/icons-vue'
+import { School, CircleCheck, Clock, Lock, Right, Plus, House, Calendar, User, SwitchButton, Files } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
+import { useAppStore } from '@/pinia'
 import { downloadLeaveProof } from '@/utils/leaveProof'
 
 const mustChange = ref(false)
 const confirmPassword = ref('')
 const token = ref(sessionStorage.getItem('uni_student_token') || '')
 const router = useRouter()
+const appStore = useAppStore()
 watch(token, value => {
   if (!value) router.replace({ name: 'Login' })
 })
 const me = ref(null)
-const loading = ref(false)
+const profileLoading = ref(true)
+const profileError = ref('')
 const oldPassword = ref('')
 const newPassword = ref('')
 const passwordSaving = ref(false)
 const activeTab = ref('dashboard')
 const navigation = [
   { key: 'dashboard', label: '首页概览', shortLabel: '首页', icon: House },
-  { key: 'leaves', label: '我的请假', shortLabel: '请假', icon: Calendar },
+  { key: 'apply', label: '请假申请', shortLabel: '请假', icon: Calendar },
+  { key: 'leaves', label: '请假记录', shortLabel: '记录', icon: Files },
   { key: 'profile', label: '个人中心', shortLabel: '我的', icon: User },
-  { key: 'security', label: '账号安全', shortLabel: '安全', icon: Lock },
+
 ]
-const currentTabLabel = computed(() => navigation.find(n => n.key === activeTab.value)?.label || '首页概览')
+const currentTabLabel = computed(() => navigation.find(n => n.key === activeTab.value)?.label || '账号安全')
 const profileColumns = ref(window.innerWidth < 640 ? 1 : 2)
 const onResize = () => { profileColumns.value = window.innerWidth < 640 ? 1 : 2 }
 
@@ -162,9 +205,22 @@ const clear = () => {
   leaveTotal.value = 0
   leavePage.value = 1
 }
-const loadMe = async () => {
-  try { const d = await call('/uni/student-portal/me'); mustChange.value=!!d.mustChangePassword; me.value=mustChange.value?null:d }
-  catch (e) { clear(); ElMessage.error(leaveError(e)) }
+const initialize = async () => {
+  profileLoading.value = true
+  profileError.value = ''
+  try {
+    const profile = await call('/uni/student-portal/me')
+    mustChange.value = Boolean(profile.mustChangePassword)
+    if (!mustChange.value) {
+      me.value = profile
+      await loadDashboard()
+    }
+  } catch (error) {
+    if (error.response?.status === 401) clear()
+    else profileError.value = leaveError(error)
+  } finally {
+    profileLoading.value = false
+  }
 }
 const logout = async () => {
   try { await call('/uni/student-portal/logout', 'post', {}) }
@@ -199,26 +255,110 @@ const maxProofSize = 5 * 1024 * 1024
 const leaveForm = ref({ leaveType: 'personal', reason: '', startAt: '', endAt: '' })
 const leaveErrors = ref({})
 const statusFilter = ref('all')
-const filteredLeaveRows = computed(() => statusFilter.value === 'all' ? leaveRows.value : leaveRows.value.filter(r => r.status === statusFilter.value))
+const dateFilter = ref(null)
+const dateFrom = ref('')
+const dateTo = ref('')
+const dateError = ref('')
+const selectedLeave = ref(null)
+const cancelling = ref(false)
+const recentLeaves = ref([])
+const summary = ref(null)
+const recordsError = ref('')
+const dashboardError = ref('')
+const dashboardLoading = ref(false)
+let leaveRequestVersion = 0
+let dashboardRequestVersion = 0
+
 const stats = computed(() => [
-  { key: 'total', label: '请假总数', value: leaveTotal.value, icon: Files },
-  { key: 'pending', label: '本页待审批', value: leaveRows.value.filter(r => r.status === 'pending').length, icon: Clock },
-  { key: 'approved', label: '本页已通过', value: leaveRows.value.filter(r => r.status === 'approved').length, icon: CircleCheck },
-  { key: 'rejected', label: '本页已驳回', value: leaveRows.value.filter(r => r.status === 'rejected').length, icon: CircleClose },
+  { key: 'total', label: '累计请假', value: summary.value?.total ?? '—', icon: Files },
+  { key: 'pending', label: '待审批', value: summary.value?.pending ?? '—', icon: Clock },
+  { key: 'approved', label: '已批准', value: summary.value?.approved ?? '—', icon: CircleCheck }
 ])
 const statusType = status => ({ pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'info' })[status] || 'info'
-const leaveFmt = v => v ? String(v).replace('T', ' ').slice(0, 16) : ''
+const leaveFmt = value => value ? String(value).replace('T', ' ').slice(0, 16) : ''
+const formatDuration = (start, end) => {
+  const minutes = Math.round((Date.parse(leaveFmt(end).replace(' ', 'T')) - Date.parse(leaveFmt(start).replace(' ', 'T'))) / 60000)
+  if (!(minutes > 0)) return ''
+  const days = Math.floor(minutes / 1440)
+  const hours = Math.floor(minutes / 60) % 24
+  const remainder = minutes % 60
+  return [days && `${days}天`, hours && `${hours}小时`, remainder && `${remainder}分钟`].filter(Boolean).join('')
+}
+const leaveDuration = computed(() => formatDuration(leaveForm.value.startAt, leaveForm.value.endAt))
+const beforeToday = day => day < new Date(new Date().setHours(0, 0, 0, 0))
+const beforeStartDate = day => beforeToday(day) ||
+  Boolean(leaveForm.value.startAt && day < new Date(leaveForm.value.startAt.slice(0, 10) + 'T00:00:00'))
+
+const loadDashboard = async () => {
+  if (!token.value) return
+  const version = ++dashboardRequestVersion
+  dashboardLoading.value = true
+  dashboardError.value = ''
+  try {
+    const result = await call('/uni/student-portal/leaves', 'get', undefined, { pageSize: 3, includeSummary: true })
+    if (version !== dashboardRequestVersion) return
+    recentLeaves.value = result.list || []
+    summary.value = result.summary
+  } catch (error) {
+    if (error.response?.status === 401) clear()
+    else if (version === dashboardRequestVersion) dashboardError.value = leaveError(error)
+  } finally {
+    if (version === dashboardRequestVersion) dashboardLoading.value = false
+  }
+}
+
 const loadLeaves = async () => {
   if (!token.value) return
+  const version = ++leaveRequestVersion
   leaveLoading.value = true
+  recordsError.value = ''
+  const [from, to] = dateFilter.value || []
   try {
-    const data = await call('/uni/student-portal/leaves', 'get', undefined, { page: leavePage.value, pageSize: 10 })
-    leaveRows.value = data?.list || []
-    leaveTotal.value = data?.total || 0
-  } catch (e) { ElMessage.error(leaveError(e)) }
-  finally { leaveLoading.value = false }
+    const result = await call('/uni/student-portal/leaves', 'get', undefined, {
+      page: leavePage.value, pageSize: 10, from, to,
+      status: statusFilter.value === 'all' ? undefined : statusFilter.value
+    })
+    if (version !== leaveRequestVersion) return
+    leaveTotal.value = result.total
+    leaveRows.value = result.list || []
+    const lastPage = Math.max(1, Math.ceil(leaveTotal.value / 10))
+    if (leavePage.value > lastPage) leavePage.value = lastPage
+  } catch (error) {
+    if (version !== leaveRequestVersion) return
+    if (error.response?.status === 401) clear()
+    else recordsError.value = leaveError(error)
+  } finally {
+    if (version === leaveRequestVersion) leaveLoading.value = false
+  }
 }
-const refreshLeaves = () => { loadLeaves() }
+const refreshLeaves = () => {
+  if (leavePage.value === 1) loadLeaves()
+  else leavePage.value = 1
+}
+const applyDates = () => {
+  if (!dateFrom.value || !dateTo.value || dateFrom.value > dateTo.value) {
+    dateError.value = '请选择有效的开始和结束日期'
+    return
+  }
+  dateError.value = ''
+  dateFilter.value = [dateFrom.value, dateTo.value]
+  refreshLeaves()
+}
+const clearDates = () => {
+  dateFrom.value = ''
+  dateTo.value = ''
+  dateError.value = ''
+  dateFilter.value = null
+  refreshLeaves()
+}
+const navigate = tab => {
+  if (tab === 'apply') openLeaveDialog()
+  else activeTab.value = tab
+}
+watch(activeTab, tab => {
+  if (tab === 'leaves') loadLeaves()
+  if (tab === 'dashboard') loadDashboard()
+})
 const selectProof = event => {
   const files = Array.from(event.target.files)
   event.target.value = ''
@@ -292,20 +432,28 @@ const submitLeave = async () => {
     }
     ElMessage.success('请假申请已提交')
     leaveDialog.value = false
-    leavePage.value = 1
-    await loadLeaves()
+    if (activeTab.value === 'leaves') refreshLeaves()
+    await loadDashboard()
   } catch (e) { ElMessage.error(leaveError(e)) }
   finally { leaveSaving.value = false }
 }
 const cancelLeave = async row => {
+  if (cancelling.value) return
+  cancelling.value = true
   try {
     await ElMessageBox.confirm('确认撤销这条待审批请假申请？', '撤销确认', { type: 'warning', confirmButtonText: '确认撤销', cancelButtonText: '取消' })
     await call('/uni/student-portal/leaves/cancel', 'post', { id: row.id })
     ElMessage.success('已撤销')
-    await loadLeaves()
+    selectedLeave.value = null
+    if (activeTab.value === 'leaves') refreshLeaves()
+    await loadDashboard()
   } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(leaveError(e)) }
+  finally { cancelling.value = false }
 }
-onMounted(async () => { window.addEventListener('resize', onResize); if (token.value) { await loadMe(); if (token.value && !mustChange.value) await loadLeaves() } })
+onMounted(() => {
+  window.addEventListener('resize', onResize)
+  if (token.value) initialize()
+})
 onUnmounted(() => window.removeEventListener('resize', onResize))
 </script>
 
@@ -388,5 +536,75 @@ html, body {
   .student-portal.uni-ui .stat-card { min-width: 0; }
   .student-portal.uni-ui .stat-value { overflow-wrap: anywhere; }
   .student-portal.uni-ui .pagination { justify-content: center; }
+}
+</style>
+
+<style scoped>
+.student-portal {
+  --student-surface: #fff;
+  --student-ink: #17233c;
+  --student-muted: #52647d;
+  --student-line: #e3eaf4;
+}
+.student-portal.uni-ui .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.student-portal.uni-ui .stat-label { color: var(--student-muted); }
+.leave-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px 14px;
+  min-height: 70px;
+  padding: 14px 0;
+  border: 0;
+  border-top: 1px solid var(--student-line);
+  background: transparent;
+  color: var(--student-ink);
+  text-align: left;
+  cursor: pointer;
+}
+.leave-card > span:last-child { grid-column: 1 / -1; color: var(--student-muted); font-size: 13px; }
+.leave-card:focus-visible { outline: 2px solid #5384ef; outline-offset: 2px; border-radius: 6px; }
+.record-filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.record-filters .el-select { width: 150px; }
+.record-filters label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.record-filters input { min-height: 34px; color: var(--student-ink); background: var(--student-surface); border: 1px solid var(--student-line); border-radius: 7px; padding: 4px 8px; }
+.date-error { color: var(--el-color-danger); margin-bottom: 12px; }
+:global(html.dark) .record-filters input { color-scheme: dark; }
+.application-advisor { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 10px; margin-bottom: 16px; background: var(--el-fill-color-light); }
+.application-duration { margin: -4px 0 16px; display: flex; justify-content: space-between; }
+.leave-details { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px 16px; }
+.leave-details dt { color: var(--student-muted); }
+.leave-details dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.profile-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 24px 24px; }
+.profile-actions :deep(.el-button) { margin-left: 0; }
+.profile-loading { max-width: 560px; margin: 0 auto; padding: 36px 18px; }
+
+@media (max-width: 760px) {
+  .student-portal.uni-ui .stats-grid { gap: 8px; }
+  .student-portal.uni-ui .stat-card { padding: 14px 6px; justify-content: center; text-align: center; }
+  .student-portal .stat-icon { display: none; }
+  .student-portal .welcome-decoration { display: none; }
+  .student-portal.uni-ui .mobile-nav { padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+  .student-portal.uni-ui .content { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .record-filters { flex-direction: column; }
+  .record-filters .el-select, .record-filters input { width: 100%; }
+  .record-filters label { display: grid; grid-template-columns: 64px minmax(0, 1fr); }
+}
+
+:global(html.dark) .student-portal {
+  --student-surface: #152033;
+  --student-ink: #e6edf8;
+  --student-muted: #aebdd2;
+  --student-line: #2a3951;
+  background: #101827;
+  color: var(--student-ink);
+}
+:global(html.dark) .student-portal :is(.sidebar, .topbar, .section-card, .stat-card, .mobile-nav, .profile-banner) {
+  background: var(--student-surface);
+  border-color: var(--student-line);
+}
+:global(html.dark) .student-portal :is(.section-header h2, .topbar-left strong, .nav-item, .mobile-nav button, .page-heading p, .muted) {
+  color: var(--student-ink);
 }
 </style>

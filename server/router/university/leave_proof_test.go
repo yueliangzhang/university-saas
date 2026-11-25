@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,4 +174,20 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("unassigned teacher download: %d", response.Code)
 	}
+	if err := db.Exec(`INSERT INTO uni_leave_requests (tenant_id,student_id,status,start_at,end_at)
+		VALUES (1,2,'approved','2020-05-01 12:00:00','2020-05-02 12:00:00'),
+		(1,2,'approved','2020-04-30 12:00:00','2020-05-01 00:00:00'),
+		(2,2,'approved','2020-05-01 12:00:00','2020-05-02 12:00:00')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	filtered := send(http.MethodGet, "/student/leaves?status=approved&from=2020-05-01&to=2020-05-01&includeSummary=true", "", nil, "")
+	if filtered.Code != http.StatusOK || !strings.Contains(filtered.Body.String(), `"total":1`) ||
+		!strings.Contains(filtered.Body.String(), `"approved":2`) {
+		t.Fatalf("filtered records and unfiltered summary: %d %s", filtered.Code, filtered.Body)
+	}
+	badRange := send(http.MethodGet, "/student/leaves?from=2020-05-02&to=2020-05-01", "", nil, "")
+	if badRange.Code != http.StatusBadRequest {
+		t.Fatalf("invalid range returned %d", badRange.Code)
+	}
+
 }
