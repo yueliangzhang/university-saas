@@ -13,7 +13,6 @@ if [[ "$target" != "$root/releases/"* ]] ||
   printf 'Invalid release: %s\n' "$target" >&2
   exit 1
 fi
-sudo -v
 
 switch_release() {
   ln -sfnT "$1" "$root/.current-$$" &&
