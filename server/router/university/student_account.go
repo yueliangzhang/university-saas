@@ -73,13 +73,28 @@ func studentAccountList(c *gin.Context) {
 		like := "%" + keyword + "%"
 		q = q.Where("s.name LIKE ? OR s.student_no LIKE ?", like, like)
 	}
+	if status := c.Query("status"); status != "" {
+		switch status {
+		case "0":
+			q = q.Where("a.id IS NULL")
+		case "1", "2":
+			q = q.Where("a.status=?", status)
+		default:
+			studentAuthError(c, 400, "账号状态不合法")
+			return
+		}
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		studentAuthError(c, 500, "查询失败")
 		return
 	}
 	var rows []studentAccountView
-	err := q.Select("COALESCE(a.id,0) id,s.id student_id,s.student_no,s.name,COALESCE(a.status,0) status,a.last_login_at").Order("s.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error
+	q = recordOrder(c, q, "s.id", map[string]string{
+		"studentNo": "s.student_no", "name": "s.name",
+		"status": "COALESCE(a.status,0)", "lastLoginAt": "a.last_login_at",
+	})
+	err := q.Select("COALESCE(a.id,0) id,s.id student_id,s.student_no,s.name,COALESCE(a.status,0) status,a.last_login_at").Limit(size).Offset((page - 1) * size).Scan(&rows).Error
 	if err != nil {
 		studentAuthError(c, 500, "查询失败")
 		return

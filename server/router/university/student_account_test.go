@@ -9,6 +9,7 @@ import (
 
 	systemAPI "github.com/flipped-aurora/gin-vue-admin/server/api/v1/system"
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
+	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
 	"github.com/flipped-aurora/gin-vue-admin/server/model/system"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -208,6 +209,45 @@ func TestStudentPortalLoginThenMe(t *testing.T) {
 	}
 	if result := login("/uni/portal/login", `{"tenantCode":"0007","account":"S001","password":"testpw"}`); result.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected throttled login, got %d: %s", result.Code, result.Body)
+	}
+
+	for _, statement := range []string{
+		"INSERT INTO uni_students VALUES (6,1,1,'S002','Test Pending',3,2026,NULL),(7,1,1,'S003','Test Disabled',3,2026,NULL),(8,9,1,'S000','Other School',3,2026,NULL)",
+		"INSERT INTO uni_student_accounts (id,tenant_id,student_id,status) VALUES (9,1,7,2)",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	router.GET("/accounts", func(c *gin.Context) {
+		c.Set(middleware.TenantIDContextKey, uint64(1))
+		studentAccountList(c)
+	})
+	for _, test := range []struct {
+		query  string
+		number string
+		total  int
+	}{
+		{"status=0", "S002", 1},
+		{"status=1", "S001", 1},
+		{"status=2", "S003", 1},
+		{"status=0&keyword=Test", "S002", 1},
+		{"sortBy=studentNo&sortOrder=asc&pageSize=1&page=2", "S002", 3},
+		{"sortBy=status&sortOrder=desc&pageSize=1", "S003", 3},
+	} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/accounts?"+test.query, nil))
+		var result struct {
+			Data struct {
+				List  []studentAccountView
+				Total int
+			}
+		}
+		err := json.Unmarshal(recorder.Body.Bytes(), &result)
+		if err != nil || recorder.Code != http.StatusOK || result.Data.Total != test.total ||
+			len(result.Data.List) != 1 || result.Data.List[0].StudentNo != test.number {
+			t.Fatalf("account list %s returned %d: %s", test.query, recorder.Code, recorder.Body)
+		}
 	}
 
 }
