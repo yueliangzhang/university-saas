@@ -13,8 +13,10 @@
         </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="resetFilters">重置筛选</el-button>
+        <el-button type="warning" plain :disabled="loading || !selectedAccounts.length" :loading="batchResetting" @click="resetSelected">批量重置密码</el-button>
       </form>
-      <el-table v-loading="loading" :data="rows" border @sort-change="changeSort">
+      <el-table v-loading="loading" :data="rows" border @sort-change="changeSort" @selection-change="selectedAccounts = $event">
+        <el-table-column type="selection" width="48" :selectable="row => row.status !== 0" />
         <el-table-column prop="studentNo" label="学号" sortable="custom" />
         <el-table-column prop="name" label="姓名" sortable="custom" />
         <el-table-column prop="status" label="账号状态" sortable="custom">
@@ -111,6 +113,27 @@ const changeSort = ({ prop, order }) => {
 
 watch(status, () => { page.value = 1 }, { flush: 'sync' })
 watch([page, pageSize, appliedKeyword, status, sort], load, { immediate: true })
+const selectedAccounts = ref([])
+const batchResetting = ref(false)
+const resetSelected = async () => {
+  const studentIds = selectedAccounts.value.map(row => row.studentId)
+  if (!studentIds.length || batchResetting.value) return
+  batchResetting.value = true
+  try {
+    await ElMessageBox.confirm(
+      `将 ${studentIds.length} 个账号重置为初始密码，并退出这些账号的当前会话？`,
+      '批量重置学生密码', { type: 'warning' }
+    )
+    const result = await api('/uni/student-accounts/reset-password', 'post', { studentIds })
+    if (result.code !== 0) throw new Error(result.msg || '重置失败')
+    ElMessage.success(`已重置 ${result.data.count} 个账号`)
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.msg || error.message || '重置失败')
+  } finally {
+    batchResetting.value = false
+  }
+}
 const openPassword=(row,isReset)=>{selected.value=row;reset.value=isReset;password.value='';dialog.value=true}
 const save=async()=>{saving.value=true;try{const url=reset.value?'/uni/student-accounts/reset-password':'/uni/student-accounts';const r=await api(url,'post',{studentId:selected.value.studentId,password:"123456"});if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('操作成功');dialog.value=false;password.value='';await load()}catch(e){ElMessage.error(e.message||'保存失败')}finally{saving.value=false}}
 const toggle=async row=>{try{await ElMessageBox.confirm(`确定${row.status===1?'停用':'启用'}该账号？`,'确认');const r=await api('/uni/student-accounts/status','put',{studentId:row.studentId,status:row.status===1?2:1});if(r?.code!==0)throw Error(r?.msg||'操作失败');await load()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'操作失败')}}

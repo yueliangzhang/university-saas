@@ -1,8 +1,9 @@
 <template>
   <div class="uni-teacher-panel">
     <div v-if="mode === 'accounts'" class="uni-panel-section">
-      <div class="uni-panel-heading"><div><h3>教师登录账号</h3><p>开通账号、重置密码及启停管理</p></div><el-button @click="load">刷新</el-button></div>
-      <el-table v-loading="loading" :data="pageRows" row-key="id" style="width:100%" empty-text="暂无教师">
+      <div class="uni-panel-heading"><div><h3>教师登录账号</h3><p>开通账号、重置密码及启停管理</p></div><div><el-button type="warning" plain :loading="batchResetting" :disabled="loading || !selectedAccounts.length" @click="resetSelected">批量重置密码</el-button><el-button @click="load">刷新</el-button></div></div>
+      <el-table v-loading="loading" :data="pageRows" row-key="id" style="width:100%" empty-text="暂无教师" @selection-change="selectedAccounts = $event">
+        <el-table-column type="selection" width="48" :selectable="row => row.status === 1 && !!account(row.id)" />
         <el-table-column prop="teacherNo" label="工号" min-width="120" />
         <el-table-column prop="name" label="姓名" min-width="140" />
         <el-table-column label="账号状态" min-width="130"><template #default="{row}"><el-tag v-if="account(row.id)" :type="account(row.id).status===1?'success':'info'">{{account(row.id).status===1?'正常':'停用'}}</el-tag><el-tag v-else type="warning">未开通</el-tag></template></el-table-column>
@@ -37,6 +38,27 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import request from '@/utils/request'
 const teachers=ref([]),accounts=ref([]),classes=ref([]),advisors=ref([]),loading=ref(false),saving=ref(false),dialog=ref(false),selected=ref(null),reset=ref(false),password=ref('')
 const props=defineProps({mode:{type:String,default:'accounts'}})
+const selectedAccounts = ref([])
+const batchResetting = ref(false)
+const resetSelected = async () => {
+  const teacherIds = selectedAccounts.value.map(row => row.id)
+  if (!teacherIds.length || batchResetting.value) return
+  batchResetting.value = true
+  try {
+    await ElMessageBox.confirm(
+      `将 ${teacherIds.length} 个账号重置为初始密码，并退出这些账号的当前会话？`,
+      '批量重置教师密码', { type: 'warning' }
+    )
+    const result = await request({ url: '/uni/teacher-accounts/reset-password', method: 'post', data: { teacherIds } })
+    if (result.code !== 0) throw new Error(result.msg || '重置失败')
+    ElMessage.success(`已重置 ${result.data.count} 个账号`)
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.msg || error.message || '重置失败')
+  } finally {
+    batchResetting.value = false
+  }
+}
 const accountPagination = reactive({ page: 1, pageSize: 10 })
 const advisorPagination = reactive({ page: 1, pageSize: 10 })
 const pagination = computed(() => props.mode === 'accounts' ? accountPagination : advisorPagination)

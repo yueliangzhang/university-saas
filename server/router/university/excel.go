@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -401,12 +402,33 @@ func excelExport(student bool) gin.HandlerFunc {
 			studentError(c, 403, "缺少高校身份")
 			return
 		}
-		f, e := excelBook(excelHeaders(student))
-		defer f.Close()
+		headers := excelHeaders(student)
+		var indices []int
+		if fields := c.Query("fields"); fields != "" {
+			for _, field := range strings.Split(fields, ",") {
+				index, err := strconv.Atoi(field)
+				if err != nil || index < 0 || index >= len(headers) || slices.Contains(indices, index) {
+					studentError(c, 400, "导出字段不合法")
+					return
+				}
+				indices = append(indices, index)
+			}
+		} else {
+			for i := range headers {
+				indices = append(indices, i)
+			}
+		}
+		selectedHeaders := make([]string, 0, len(indices))
+		for _, index := range indices {
+			selectedHeaders = append(selectedHeaders, headers[index])
+		}
+		f, e := excelBook(selectedHeaders)
 		if e != nil {
 			studentError(c, 500, "导出失败")
 			return
 		}
+		defer f.Close()
+
 		type row struct {
 			Number, Name, OrgName, OrgCode, AdvisorName, AdvisorCode, Phone, Email, Title string
 			Gender, Status, EnrollmentYear                                                int
@@ -443,6 +465,23 @@ func excelExport(student bool) gin.HandlerFunc {
 				}
 			}
 		}
+		if student {
+			if status := c.Query("status"); status != "" {
+				if status != "1" && status != "2" {
+					studentError(c, 400, "状态不合法")
+					return
+				}
+				q = q.Where("s.status=?", status)
+			}
+			if raw := c.Query("enrollmentYear"); raw != "" {
+				year, err := strconv.Atoi(raw)
+				if err != nil || year < 1900 || year > 2100 {
+					studentError(c, 400, "入学年份不合法")
+					return
+				}
+				q = q.Where("s.enrollment_year=?", year)
+			}
+		}
 		if e = q.Order("s.id DESC").Limit(50001).Scan(&rows).Error; e != nil || len(rows) > 50000 {
 			studentError(c, 400, "导出失败或超过50000条，请缩小筛选范围")
 			return
@@ -465,9 +504,9 @@ func excelExport(student bool) gin.HandlerFunc {
 			if student {
 				v = []string{r.Number, r.Name, org, a, g, strconv.Itoa(r.EnrollmentYear), r.Phone, r.Email, status}
 			}
-			for j, s := range v {
+			for j, index := range indices {
 				cell, _ := excelize.CoordinatesToCellName(j+1, i+2)
-				if e = f.SetCellStr("Sheet1", cell, s); e != nil {
+				if e = f.SetCellStr("Sheet1", cell, v[index]); e != nil {
 					studentError(c, 500, "导出失败")
 					return
 				}

@@ -143,33 +143,51 @@ func studentAccountReset(c *gin.Context) {
 		return
 	}
 	var in struct {
-		StudentID uint64 `json:"studentId"`
-		Password  string `json:"password"`
+		StudentID  uint64   `json:"studentId"`
+		StudentIDs []uint64 `json:"studentIds"`
+		Password   string   `json:"password"`
 	}
-	if c.ShouldBindJSON(&in) != nil || in.StudentID == 0 {
+	if c.ShouldBindJSON(&in) != nil || (in.StudentIDs != nil && in.StudentID != 0) {
 		studentAuthError(c, 400, "参数不合法")
 		return
+	}
+	ids := in.StudentIDs
+	if ids == nil {
+		ids = []uint64{in.StudentID}
+	}
+	seen := make(map[uint64]bool, len(ids))
+	if len(ids) == 0 || len(ids) > 100 {
+		studentAuthError(c, 400, "每次可重置1至100个账号")
+		return
+	}
+	for _, id := range ids {
+		if id == 0 || seen[id] {
+			studentAuthError(c, 400, "学生编号不合法或重复")
+			return
+		}
+		seen[id] = true
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte("123456"), bcrypt.DefaultCost)
 	if err != nil {
 		studentAuthError(c, 500, "密码处理失败")
 		return
 	}
-	err = global.GVA_DB.Transaction(func(tx *gorm.DB) error {
-		r := tx.Table("uni_student_accounts").Where("tenant_id=? AND student_id=?", tid, in.StudentID).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now(), "must_change_password": true, "failed_attempts": 0, "locked_until": nil})
+	err = global.GVA_DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		r := tx.Table("uni_student_accounts").Where("tenant_id=? AND student_id IN ?", tid, ids).Updates(map[string]interface{}{"password_hash": string(hash), "password_changed_at": time.Now(), "must_change_password": true, "failed_attempts": 0, "locked_until": nil})
 		if r.Error != nil {
 			return r.Error
 		}
-		if r.RowsAffected != 1 {
+		if r.RowsAffected != int64(len(ids)) {
 			return gorm.ErrRecordNotFound
 		}
-		return tx.Exec("UPDATE uni_student_sessions SET revoked_at=NOW(3) WHERE tenant_id=? AND account_id=(SELECT id FROM uni_student_accounts WHERE tenant_id=? AND student_id=?) AND revoked_at IS NULL", tid, tid, in.StudentID).Error
+		accounts := tx.Table("uni_student_accounts").Select("id").Where("tenant_id=? AND student_id IN ?", tid, ids)
+		return tx.Table("uni_student_sessions").Where("tenant_id=? AND account_id IN (?) AND revoked_at IS NULL", tid, accounts).Update("revoked_at", time.Now()).Error
 	})
 	if err != nil {
 		studentAuthError(c, 404, "账号不存在")
 		return
 	}
-	studentAuthOK(c, gin.H{"reset": true})
+	studentAuthOK(c, gin.H{"reset": true, "count": len(ids)})
 }
 func studentAccountStatus(c *gin.Context) {
 	tid, ok := middleware.GetTenantID(c)

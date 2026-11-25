@@ -1,6 +1,6 @@
 <template>
-  <main class="monitor">
-    <header class="heading"><div><h1>学生请假监管</h1><p>全校学生请假记录查询与实时监管</p></div><el-tag type="info" effect="plain">只读权限</el-tag></header>
+  <main class="monitor university-workspace">
+    <header class="heading workspace-heading"><div><h1>学生请假监管</h1><p>全校学生请假记录查询与实时监管</p></div><el-tag type="info" effect="plain">只读权限</el-tag></header>
     <section class="metrics">
       <div v-for="(label,key) in labels" :key="key" class="metric" :class="key">
         <div class="metric-top"><span>{{label}}</span><span class="symbol">{{symbols[key]}}</span></div>
@@ -20,7 +20,7 @@
           <div class="actions wide"><el-checkbox v-model="current" @change="quick=''">正在请假</el-checkbox><el-button type="primary" native-type="submit" :loading="loading">查询</el-button><el-button @click="reset">重置</el-button></div>
         </div>
       </el-form>
-      <el-table :data="rows" v-loading="loading" stripe size="small" empty-text="暂无符合条件的请假记录" style="width:100%">
+      <el-table max-height="620" :data="rows" v-loading="loading" stripe size="small" empty-text="暂无符合条件的请假记录" style="width:100%">
         <el-table-column label="学生信息" min-width="115"><template #default="{row}"><div class="primary">{{row.name}}</div><div class="secondary">{{row.studentNo}}</div></template></el-table-column>
         <el-table-column label="学院 / 专业" min-width="115"><template #default="{row}"><div>{{row.college}}</div><div class="secondary">{{row.major}}</div></template></el-table-column>
         <el-table-column label="班级 / 辅导员" min-width="125"><template #default="{row}"><div>{{row.className}}</div><div class="secondary">{{row.advisor || '未分配'}}</div></template></el-table-column>
@@ -72,3 +72,5 @@ onMounted(async()=>{const r=await get('options');if(r.code===0)options.value=r.d
 .monitor{padding:24px;min-width:0;color:var(--el-text-color-primary)}
 .heading,.toolbar,.metric-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.heading{margin-bottom:20px}.heading h1{font-size:24px;font-weight:700;margin:0 0 6px}.heading p,.metric p{margin:0;color:var(--el-text-color-secondary);font-size:13px}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:20px}.metric,.panel{background:var(--el-bg-color);border:1px solid var(--el-border-color-lighter);border-radius:12px}.metric{padding:18px;--accent:#2563eb}.metric.current{--accent:#059669}.metric.pending{--accent:#d97706}.metric.total{--accent:#7c3aed}.metric-top{font-size:14px;color:var(--el-text-color-regular)}.symbol{font-size:24px;color:var(--accent);background:var(--el-fill-color-light);width:38px;height:38px;display:grid;place-items:center;border-radius:9px}.metric strong{display:block;font-size:32px;line-height:1.4;color:var(--accent);font-variant-numeric:tabular-nums}.metric small{font-size:12px;font-weight:400;color:var(--el-text-color-secondary)}.panel{padding:20px;min-width:0}.toolbar h2{font-size:18px;font-weight:600;margin:0}.quick{margin:16px 0}.filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0 16px}.filters :deep(.el-select),.filters :deep(.el-date-editor){width:100%}.filters :deep(.el-form-item){margin-bottom:14px}.wide{grid-column:span 2}.actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding-bottom:12px}.actions :deep(.el-button){margin-left:0}.primary{font-weight:600}.secondary{font-size:12px;color:var(--el-text-color-secondary)}.date{font-variant-numeric:tabular-nums;white-space:nowrap}.panel :deep(.el-table .cell){line-height:19px;overflow-wrap:anywhere}.panel :deep(.el-table th.el-table__cell){background:var(--el-fill-color-light)}.panel :deep(.el-table td.el-table__cell){padding:9px 0}.pagination{display:flex;justify-content:flex-end;overflow:auto;margin-top:18px}@media(max-width:1100px){.metrics,.filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.monitor,.panel{padding:12px}.metrics,.filters{grid-template-columns:1fr}.wide{grid-column:span 1}.heading h1{font-size:20px}.quick{overflow:auto}.quick :deep(.el-radio-group){flex-wrap:nowrap}.pagination{justify-content:flex-start}}
 </style>
+
+<style scoped src="./adminWorkspace.css"></style>

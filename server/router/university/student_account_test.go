@@ -253,4 +253,50 @@ func TestStudentPortalLoginThenMe(t *testing.T) {
 		}
 	}
 
+	for _, statement := range []string{
+		"ALTER TABLE uni_student_accounts ADD COLUMN password_changed_at DATETIME",
+		"ALTER TABLE uni_teacher_accounts ADD COLUMN password_changed_at DATETIME",
+		"INSERT INTO uni_teachers VALUES (10,1,'Second Teacher','T002',1)",
+		"INSERT INTO uni_teacher_accounts (id,tenant_id,teacher_id,status) VALUES (11,1,10,1)",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	router.POST("/reset-students", func(c *gin.Context) {
+		c.Set(middleware.TenantIDContextKey, uint64(1))
+		studentAccountReset(c)
+	})
+	router.POST("/reset-teachers", func(c *gin.Context) {
+		c.Set(middleware.TenantIDContextKey, uint64(1))
+		teacherAccountPassword(c, true)
+	})
+	for _, test := range []struct {
+		path, invalid, valid, accounts, sessions string
+		status                                   int
+	}{
+		{"/reset-students", `{"studentIds":[2,8]}`, `{"studentIds":[2,7]}`, "uni_student_accounts", "uni_student_sessions", http.StatusNotFound},
+		{"/reset-teachers", `{"teacherIds":[4,999]}`, `{"teacherIds":[4,10]}`, "uni_teacher_accounts", "uni_teacher_sessions", http.StatusConflict},
+	} {
+		countRevoked := func() int64 {
+			t.Helper()
+			var count int64
+			if err := db.Table(test.sessions).Where("tenant_id=1 AND revoked_at IS NOT NULL").Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			return count
+		}
+		before := countRevoked()
+		if result := login(test.path, test.invalid); result.Code != test.status || countRevoked() != before {
+			t.Fatalf("invalid batch for %s: %d %s", test.path, result.Code, result.Body)
+		}
+		if result := login(test.path, test.valid); result.Code != http.StatusOK || countRevoked() <= before {
+			t.Fatalf("valid batch for %s: %d %s", test.path, result.Code, result.Body)
+		}
+		var count int64
+		if err := db.Table(test.accounts).Where("tenant_id=1 AND must_change_password=true AND password_changed_at IS NOT NULL").Count(&count).Error; err != nil || count != 2 {
+			t.Fatalf("expected two reset accounts in %s, got %d: %v", test.accounts, count, err)
+		}
+	}
+
 }

@@ -120,6 +120,21 @@ func studentList(c *gin.Context) {
 			q = q.Where("s.advisor_id=?", id)
 		}
 	}
+	if status := c.Query("status"); status != "" {
+		if status != "1" && status != "2" {
+			studentError(c, 400, "状态不合法")
+			return
+		}
+		q = q.Where("s.status=?", status)
+	}
+	if raw := c.Query("enrollmentYear"); raw != "" {
+		year, err := strconv.Atoi(raw)
+		if err != nil || year < 1900 || year > 2100 {
+			studentError(c, 400, "入学年份不合法")
+			return
+		}
+		q = q.Where("s.enrollment_year=?", year)
+	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		studentError(c, 500, "统计学生失败")

@@ -1,5 +1,5 @@
 <template>
-  <section class="uni-merged-panel-root">
+  <section class="uni-merged-panel-root university-workspace">
   <div class="uni-merged-panel">
     <el-card>
       <template #header>请假审批</template>
@@ -8,7 +8,7 @@
         <el-form-item label="状态"><el-select v-model="status" clearable placeholder="全部" style="width:140px"><el-option v-for="(name,key) in statusNames" :key="key" :label="name" :value="key" /></el-select></el-form-item>
         <el-form-item><el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button><el-button type="primary" @click="openCreate">新增请假</el-button></el-form-item>
       </el-form>
-      <el-table v-loading="loading" :data="rows" border>
+      <el-table max-height="620" v-loading="loading" :data="rows" border>
         <el-table-column label="学生" min-width="150"><template #default="{row}">{{ studentName(row.studentId) }}</template></el-table-column>
         <el-table-column label="类型" width="95"><template #default="{row}">{{ typeNames[row.leaveType]||row.leaveType }}</template></el-table-column>
         <el-table-column prop="reason" label="请假原因" min-width="200" show-overflow-tooltip />
@@ -114,3 +114,5 @@ onMounted(async()=>{await loadStudents();await load()})
 }
 /* UNIVERSITY_ADMIN_V17_4_END */
 </style>
+
+<style scoped src="./adminWorkspace.css"></style>

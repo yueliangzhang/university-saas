@@ -56,6 +56,11 @@
         </div>
       </div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="org-error" />
+      <el-collapse class="org-tree-panel" @change="showTree">
+        <el-collapse-item title="学院、专业与班级树" name="tree">
+          <el-tree :data="organizationTree" node-key="key" :props="{ label: 'label' }" empty-text="暂无组织数据" />
+        </el-collapse-item>
+      </el-collapse>
       <el-table v-loading="loading" :data="pageRows" class="org-table" row-key="id" empty-text="暂无符合条件的组织数据" :key="tab" @selection-change="selectedRows = $event" @sort-change="changeSort">
         <el-table-column v-if="tab === 'classes'" type="selection" width="48" />
         <el-table-column prop="code" label="组织编码" min-width="130" sortable="custom">
@@ -133,6 +138,26 @@ const pageSize = ref(10)
 const overview=ref({colleges:null,majors:null,classes:null})
 const collegeNames=ref({})
 const majorNames=ref({})
+const treeRows = ref({ colleges: [], majors: [], classes: [] })
+const organizationTree = computed(() => {
+  const groups = new Map()
+  const collect = (parent, node) => {
+    const nodes = groups.get(parent) || []
+    nodes.push(node)
+    groups.set(parent, nodes)
+  }
+  for (const row of treeRows.value.classes) {
+    collect('major-' + row.majorId, { key: 'class-' + row.id, label: row.name })
+  }
+  for (const row of treeRows.value.majors) {
+    const key = 'major-' + row.id
+    collect('college-' + row.collegeId, { key, label: row.name, children: groups.get(key) || [] })
+  }
+  return treeRows.value.colleges.map(row => ({
+    key: 'college-' + row.id, label: row.name, children: groups.get('college-' + row.id) || []
+  }))
+})
+const showTree = names => { if (names.includes('tree')) refreshOverview() }
 const filteredRows=computed(()=>rows.value.filter(row=>{
   const q=keyword.value.trim().toLowerCase()
   return (!q || String(row.name||'').toLowerCase().includes(q) || String(row.code||'').toLowerCase().includes(q))
@@ -171,6 +196,7 @@ const refreshOverview=async()=>{
   const result=await Promise.allSettled(kinds.map(fetchList))
   result.forEach((r,i)=>{
     overview.value[kinds[i]]=r.status==='fulfilled'?r.value.length:null
+    if (r.status === 'fulfilled') treeRows.value[kinds[i]] = r.value
     if(r.status==='fulfilled'&&kinds[i]==='colleges')collegeNames.value=Object.fromEntries(r.value.map(x=>[x.id,x.name]))
     if(r.status==='fulfilled'&&kinds[i]==='majors')majorNames.value=Object.fromEntries(r.value.map(x=>[x.id,x.name]))
   })
@@ -206,7 +232,7 @@ const openCreate=async()=>{editing.value=false;form.value={code:'',name:'',statu
 const openEdit=async row=>{editing.value=true;form.value={...row};await openDialog()}
 const openDialog=async()=>{try{if(tab.value==='majors')colleges.value=await fetchList('colleges');if(tab.value==='classes')majors.value=await fetchList('majors');dialog.value=true}catch(e){ElMessage.error(e.message)}}
 const save=async()=>{if(!form.value.code?.trim()||!form.value.name?.trim()){ElMessage.warning('请填写编码和名称');return}
- saving.value=true;try{const r=await api(tab.value,editing.value?'put':'post',form.value);if(r?.code!==0)throw new Error(r?.msg||'保存失败');ElMessage.success('保存成功');dialog.value=false;await load()}catch(e){ElMessage.error(e.message)}finally{saving.value=false}}
+ saving.value=true;try{const r=await api(tab.value,editing.value?'put':'post',form.value);if(r?.code!==0)throw new Error(r?.msg||'保存失败');ElMessage.success('保存成功');dialog.value=false;await reloadOrganization()}catch(e){ElMessage.error(e.message)}finally{saving.value=false}}
 const remove=async row=>{try{await ElMessageBox.confirm(`确定删除「${row.name}」？关联的下级记录必须先删除。`,'确认删除',{type:'warning'});const r=await api(tab.value,'delete',undefined,{id:row.id});if(r?.code!==0)throw new Error(r?.msg||'删除失败');ElMessage.success('删除成功');await load();await refreshOverview()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'操作失败')}}
 onMounted(async()=>{await Promise.all([load(),refreshOverview()])})
 </script>
@@ -252,4 +278,8 @@ onMounted(async()=>{await Promise.all([load(),refreshOverview()])})
 :deep(.el-input__wrapper),:deep(.el-select__wrapper){border-radius:9px}
 @media(max-width:760px){.uni-org-v1764{padding:12px}.org-heading{padding:20px}.org-heading-symbol{display:none}.org-stats{gap:9px}.org-stat{padding:14px}.org-stat-value{font-size:23px}.org-panel-head,.org-toolbar{padding:16px}.org-tabs{padding:0 16px 14px}.org-table{margin:0 12px;width:calc(100% - 24px)}.org-search{width:min(100%,240px)}}
 @media(max-width:480px){.org-stats{grid-template-columns:1fr}.org-panel-head{align-items:flex-start;flex-direction:column}.org-create{align-self:flex-end}.org-toolbar-right{width:100%;justify-content:space-between}}
+</style>
+
+<style scoped>
+.org-tree-panel { margin: 0 24px 18px; }
 </style>

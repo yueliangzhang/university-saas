@@ -87,11 +87,19 @@ func teacherList(c *gin.Context) {
 		teacherError(c, 500, "查询失败")
 		return
 	}
-	var rows []uniTeacher
+	type Teacher = uniTeacher
+	var rows []struct {
+		Teacher
+		StudentCount int64 `json:"studentCount"`
+		ClassCount   int64 `json:"classCount"`
+	}
 	if err := recordOrder(c, q, "id", map[string]string{
 		"teacherNo": "teacher_no", "name": "name", "title": "title", "phone": "phone", "email": "email", "status": "status",
 		"collegeName": "(SELECT co.name FROM uni_colleges co WHERE co.tenant_id=uni_teachers.tenant_id AND co.id=uni_teachers.college_id)",
-	}).Limit(size).Offset((page - 1) * size).Find(&rows).Error; err != nil {
+	}).Select(`uni_teachers.*,
+		(SELECT COUNT(*) FROM uni_students s WHERE s.tenant_id=uni_teachers.tenant_id AND s.advisor_id=uni_teachers.id) AS student_count,
+		(SELECT COUNT(DISTINCT s.class_id) FROM uni_students s WHERE s.tenant_id=uni_teachers.tenant_id AND s.advisor_id=uni_teachers.id) AS class_count`).
+		Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		teacherError(c, 500, "查询失败")
 		return
 	}

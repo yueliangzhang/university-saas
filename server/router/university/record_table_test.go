@@ -1,6 +1,7 @@
 package university
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/xuri/excelize/v2"
 	"gorm.io/gorm"
 )
 
@@ -51,6 +53,23 @@ func TestRecordTablesSortAndBatchDelete(t *testing.T) {
 	router.GET("/teachers", teacherList)
 	router.DELETE("/teachers", teacherDelete)
 	router.DELETE("/classes", orgDelete("classes"))
+
+	router.GET("/export-students", excelExport(true))
+	export := httptest.NewRecorder()
+	router.ServeHTTP(export, httptest.NewRequest(http.MethodGet, "/export-students?fields=1,2", nil))
+	if export.Code != http.StatusOK {
+		t.Fatalf("custom export returned %d: %s", export.Code, export.Body)
+	}
+	workbook, err := excelize.OpenReader(bytes.NewReader(export.Body.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workbook.Close()
+	exported, err := workbook.GetRows("Sheet1")
+	if err != nil || len(exported) != 3 || len(exported[0]) != 2 ||
+		exported[0][0] != "姓名" || exported[0][1] != "班级" {
+		t.Fatalf("unexpected export columns: %v %v", exported, err)
+	}
 
 	for _, test := range []struct {
 		path string

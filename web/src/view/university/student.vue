@@ -6,7 +6,7 @@
         <h1>学生管理</h1>
         <p>统一管理学生档案、请假审批与登录账号</p>
       </div>
-      <div v-if="activeTab === 'profile'" style="display:flex;gap:8px;flex-wrap:wrap"><el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button><ExcelImport kind="students" :filters="{keyword, classId:filterClass||undefined, advisorId:filterAdvisor??undefined}" @imported="search" /><el-button type="danger" plain :loading="deleting" :disabled="loading || !selectedRows.length" @click="removeSelected">批量删除</el-button></div>
+      <div v-if="activeTab === 'profile'" style="display:flex;gap:8px;flex-wrap:wrap"><el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button><RecordColumns v-model="visibleColumns" :columns="optionalColumns" /><ExcelImport kind="students" :filters="{keyword, classId:filterClass||undefined, advisorId:filterAdvisor??undefined, status:filterStatus||undefined, enrollmentYear:filterYear||undefined}" @imported="search" /><el-button type="danger" plain :loading="deleting" :disabled="loading || !selectedRows.length" @click="removeSelected">批量删除</el-button></div>
     </div>
 
     <nav class="uni-student-tabs" aria-label="学生管理功能">
@@ -28,6 +28,14 @@
           </el-select>
         </el-form-item>
         <el-form-item label="辅导员"><el-select v-model="filterAdvisor" clearable filterable placeholder="全部辅导员" style="width:190px" @change="search"><el-option label="未分配" :value="0"/><el-option v-for="t in teachers" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id"/></el-select></el-form-item>
+        <el-form-item label="学籍状态">
+          <el-select v-model="filterStatus" clearable placeholder="全部状态" style="width:130px" @change="search">
+            <el-option label="在读" value="1" /><el-option label="停用" value="2" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="入学年份">
+          <el-input-number v-model="filterYear" :min="1900" :max="2100" :controls="false" placeholder="全部年份" @change="search" />
+        </el-form-item>
         <el-form-item class="uni-student-filter-actions">
           <el-button type="primary" @click="search">查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -35,7 +43,7 @@
       </el-form>
 
       <div class="uni-student-table-scroll">
-        <el-table v-loading="loading" :data="rows" stripe style="width:100%" empty-text="暂无符合条件的学生" @selection-change="selectedRows = $event" @sort-change="changeSort">
+        <el-table :max-height="tableHeight" v-loading="loading" :data="rows" stripe style="width:100%" empty-text="暂无符合条件的学生" @selection-change="selectedRows = $event" @sort-change="changeSort">
           <el-table-column type="selection" width="48" />
           <el-table-column prop="studentNo" label="学号" min-width="130" sortable="custom">
             <template #default="{row}"><span class="uni-student-number">{{ row.studentNo }}</span></template>
@@ -43,22 +51,23 @@
           <el-table-column prop="name" label="姓名" min-width="150" sortable="custom">
             <template #default="{row}"><span class="uni-student-name">{{ row.name }}</span></template>
           </el-table-column>
-          <el-table-column label="性别" width="85" sortable="custom" prop="gender">
+          <el-table-column v-if="visibleColumns.includes('gender')" label="性别" width="85" sortable="custom" prop="gender">
             <template #default="{row}">{{ ['未填写','男','女'][row.gender] || '未知' }}</template>
           </el-table-column>
-          <el-table-column label="所属班级" min-width="180" show-overflow-tooltip sortable="custom" prop="className">
+          <el-table-column v-if="visibleColumns.includes('className')" label="所属班级" min-width="180" show-overflow-tooltip sortable="custom" prop="className">
             <template #default="{row}">{{ className(row.classId) }}</template>
           </el-table-column>
-          <el-table-column label="所属辅导员" min-width="135" sortable="custom" prop="advisorName"><template #default="{row}">{{row.advisorName || '未分配'}}</template></el-table-column>
-          <el-table-column prop="enrollmentYear" label="入学年份" width="110" sortable="custom" />
-          <el-table-column prop="phone" label="联系电话" min-width="140" show-overflow-tooltip sortable="custom">
+          <el-table-column v-if="visibleColumns.includes('advisorName')" label="所属辅导员" min-width="135" sortable="custom" prop="advisorName"><template #default="{row}">{{row.advisorName || '未分配'}}</template></el-table-column>
+          <el-table-column v-if="visibleColumns.includes('enrollmentYear')" prop="enrollmentYear" label="入学年份" width="110" sortable="custom" />
+          <el-table-column v-if="visibleColumns.includes('phone')" prop="phone" label="联系电话" min-width="140" show-overflow-tooltip sortable="custom">
             <template #default="{row}">{{ row.phone || '—' }}</template>
           </el-table-column>
-          <el-table-column label="学籍状态" width="110" sortable="custom" prop="status">
+          <el-table-column v-if="visibleColumns.includes('status')" label="学籍状态" width="110" sortable="custom" prop="status">
             <template #default="{row}"><el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light" size="small">{{ row.status === 1 ? '在读' : '停用' }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="操作" width="142" fixed="right" align="right">
+          <el-table-column label="操作" width="176" fixed="right" align="right">
             <template #default="{row}">
+              <el-button link type="primary" @click="detail = row">详情</el-button>
               <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
               <el-button link type="danger" @click="remove(row)">删除</el-button>
             </template>
@@ -73,6 +82,18 @@
     <section v-if="activeTab === 'leave'" class="uni-student-panel uni-student-subpanel"><StudentLeavePanel /></section>
     <section v-if="activeTab === 'account'" class="uni-student-panel uni-student-subpanel"><StudentAccountPanel /></section>
 
+    <el-drawer :model-value="!!detail" title="学生详情" size="min(480px, 100vw)" append-to-body @update:model-value="value => { if (!value) detail = null }">
+      <el-descriptions v-if="detail" :column="1" border>
+        <el-descriptions-item label="学号">{{ detail.studentNo }}</el-descriptions-item>
+        <el-descriptions-item label="姓名">{{ detail.name }}</el-descriptions-item>
+        <el-descriptions-item label="所属班级">{{ className(detail.classId) }}</el-descriptions-item>
+        <el-descriptions-item label="所属辅导员">{{ detail.advisorName || '未分配' }}</el-descriptions-item>
+        <el-descriptions-item label="入学年份">{{ detail.enrollmentYear || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="联系电话">{{ detail.phone || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="邮箱">{{ detail.email || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="学籍状态">{{ detail.status === 1 ? '在读' : '停用' }}</el-descriptions-item>
+      </el-descriptions>
+    </el-drawer>
     <el-dialog v-model="dialog" :title="editing ? '编辑学生' : '新增学生'" width="560px" append-to-body class="uni-student-dialog">
       <el-form :model="form" label-width="95px">
         <el-form-item label="学号" required><el-input v-model="form.studentNo" maxlength="64" /></el-form-item>
@@ -90,6 +111,8 @@
   </main>
 </template>
 <script setup>
+import { useSessionStorage, StorageSerializers, useWindowSize } from '@vueuse/core'
+import RecordColumns from './RecordColumns.vue'
 import ExcelImport from './ExcelImport.vue' 
 import { ref, computed, onMounted } from 'vue'
 import StudentLeavePanel from './studentLeavePanel.vue'
@@ -98,11 +121,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
 import { useRecordTable } from './useRecordTable'
 const activeTab=ref('profile')
-const teachers=ref([]),filterAdvisor=ref(null),advisorChoice=ref('auto')
+const teachers=ref([]),filterAdvisor=useSessionStorage('university-student-advisor', null, { serializer: StorageSerializers.object }),advisorChoice=ref('auto')
 const loadTeachers=async()=>{try{const all=[];for(let p=1;;p++){const r=await request({url:'/uni/teachers',method:'get',params:{page:p,pageSize:100}});if(r?.code!==0)throw Error(r?.msg||'教师加载失败');const chunk=r.data?.list||[];all.push(...chunk);if(!chunk.length||all.length>=r.data.total)break}teachers.value=all}catch(e){ElMessage.error(e.message)}}
 const rows=ref([]),classes=ref([]),majors=ref([]),colleges=ref([])
-const keyword=ref(''),filterClass=ref(null),page=ref(1),pageSize=ref(20),total=ref(0)
+const detail = ref(null)
+const { height: viewportHeight } = useWindowSize()
+const tableHeight = computed(() => Math.min(720, Math.max(260, viewportHeight.value * 0.65)))
+const optionalColumns = { gender: '性别', className: '所属班级', advisorName: '所属辅导员', enrollmentYear: '入学年份', phone: '联系电话', status: '学籍状态' }
+const visibleColumns = useSessionStorage('university-student-columns', Object.keys(optionalColumns))
+const keyword=useSessionStorage('university-student-keyword', ''),filterClass=useSessionStorage('university-student-class', null, { serializer: StorageSerializers.object }),page=ref(1),pageSize=ref(20),total=ref(0)
 const loading=ref(false),saving=ref(false),dialog=ref(false),editing=ref(false),form=ref({})
+const filterStatus = useSessionStorage('university-student-status', '')
+const filterYear = useSessionStorage('university-student-year', null, { serializer: StorageSerializers.object })
 const activeClasses=computed(()=>classes.value.filter(x=>x.status===1 && majors.value.some(m=>m.id===x.majorId && m.status===1 && colleges.value.some(c=>c.id===m.collegeId && c.status===1))))
 const className=id=>classes.value.find(x=>x.id===id)?.name||`班级 #${id}`
 const api=(method='get',data,params)=>request({url:'/uni/students',method,data,params})
@@ -113,7 +143,7 @@ const load = async () => {
   try {
     const result = await api('get', undefined, {
       page: page.value, pageSize: pageSize.value, keyword: keyword.value,
-      classId: filterClass.value || undefined, advisorId: filterAdvisor.value ?? undefined,
+      classId: filterClass.value || undefined, advisorId: filterAdvisor.value ?? undefined, status: filterStatus.value || undefined, enrollmentYear: filterYear.value || undefined,
       ...sort.value
     })
     if (version !== loadVersion) return
@@ -138,7 +168,7 @@ const changeSort = event => {
 }
 const loadOptions=async()=>{try{for(const [kind,target] of [['colleges',colleges],['majors',majors],['classes',classes]]){const r=await request({url:`/uni/org/${kind}`,method:'get'});if(r?.code!==0)throw Error(r?.msg||'组织架构加载失败');target.value=r.data?.list||[]}}catch(e){ElMessage.error(e.message)}}
 const search=()=>{page.value=1;load()}
-const reset=()=>{keyword.value='';filterClass.value=null;filterAdvisor.value=null;search()}
+const reset=()=>{keyword.value='';filterClass.value=null;filterAdvisor.value=null;filterStatus.value='';filterYear.value=null;search()}
 const openCreate=()=>{editing.value=false;advisorChoice.value='auto';loadTeachers();form.value={studentNo:'',name:'',gender:0,classId:null,enrollmentYear:new Date().getFullYear(),phone:'',email:'',status:1};dialog.value=true}
 const openEdit=row=>{editing.value=true;advisorChoice.value=row.advisorId ?? 'none';loadTeachers();form.value={...row};dialog.value=true}
 const save=async()=>{if(!form.value.studentNo?.trim()||!form.value.name?.trim()||!form.value.classId){ElMessage.warning('请填写学号、姓名并选择班级');return}saving.value=true;try{const payload={...form.value};delete payload.advisorId;if(advisorChoice.value!=='auto'&&(!editing.value||advisorChoice.value!==(form.value.advisorId??'none')))payload.advisorId=advisorChoice.value==='none'?null:advisorChoice.value;const r=await api(editing.value?'put':'post',payload);if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('保存成功');dialog.value=false;await load()}catch(e){ElMessage.error(e.message)}finally{saving.value=false}}

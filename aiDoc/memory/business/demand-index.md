@@ -7,6 +7,8 @@
 
 ## Done
 
+- [V17.8.2 高校管理端优化](done/university-admin-v17.8.2.md)
+
 - [V17.8.1 教师端优化](done/university-teacher-portal-v17.8.1.md)
 
 - [V17.8.0 学生端优化](done/university-student-portal-v17.8.0.md)
