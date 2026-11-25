@@ -13,8 +13,6 @@ export default ({ command, mode }) => {
   const isDevelopmentServer = command === 'serve' && mode === 'development'
   viteLogo(env)
 
-  const timestamp = Date.parse(new Date())
-
   const alias = {
     '@': path.resolve(import.meta.dirname, './src'),
     vue$: 'vue/dist/vue.runtime.esm-bundler.js'
@@ -76,7 +74,7 @@ export default ({ command, mode }) => {
     },
     plugins: [
       vuePlugin(),
-      [Banner(`\n Build based on gin-vue-admin \n Time : ${timestamp}`)],
+      [Banner('\n Build based on gin-vue-admin')],
       VueFilePathPlugin('./src/pathInfo.json'),
       UnoCSS(),
       isDevelopmentServer && vueRootValidator()

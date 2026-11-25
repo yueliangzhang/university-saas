@@ -1,6 +1,7 @@
 package university
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func excelHeaders(student bool) []string {
@@ -169,6 +171,9 @@ func excelRead(c *gin.Context, headers []string) ([][]string, error) {
 	defer it.Close()
 	var rows [][]string
 	for it.Next() {
+		if err := c.Request.Context().Err(); err != nil {
+			return nil, err
+		}
 		r, e := it.Columns()
 		if e != nil {
 			return nil, e
@@ -422,23 +427,19 @@ func excelExport(student bool) gin.HandlerFunc {
 		for _, index := range indices {
 			selectedHeaders = append(selectedHeaders, headers[index])
 		}
-		f, e := excelBook(selectedHeaders)
-		if e != nil {
-			studentError(c, 500, "导出失败")
-			return
-		}
-		defer f.Close()
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
+		defer cancel()
+		db := global.GVA_DB.WithContext(ctx)
 
 		type row struct {
 			Number, Name, OrgName, OrgCode, AdvisorName, AdvisorCode, Phone, Email, Title string
 			Gender, Status, EnrollmentYear                                                int
 		}
-		var rows []row
 		var q *gorm.DB
 		if student {
-			q = global.GVA_DB.Table("uni_students s").Select("s.student_no AS number,s.name,s.gender,s.phone,s.email,s.status,s.enrollment_year,cl.name AS org_name,cl.code AS org_code,COALESCE(t.name,'') AS advisor_name,COALESCE(t.teacher_no,'') AS advisor_code").Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").Joins("LEFT JOIN uni_teachers t ON t.tenant_id=s.tenant_id AND t.id=s.advisor_id").Where("s.tenant_id=?", tid)
+			q = db.Table("uni_students s").Select("s.student_no AS number,s.name,s.gender,s.phone,s.email,s.status,s.enrollment_year,cl.name AS org_name,cl.code AS org_code,COALESCE(t.name,'') AS advisor_name,COALESCE(t.teacher_no,'') AS advisor_code").Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").Joins("LEFT JOIN uni_teachers t ON t.tenant_id=s.tenant_id AND t.id=s.advisor_id").Where("s.tenant_id=?", tid)
 		} else {
-			q = global.GVA_DB.Table("uni_teachers s").Select("s.teacher_no AS number,s.name,s.gender,s.phone,s.email,s.status,s.title,co.name AS org_name,co.code AS org_code").Joins("JOIN uni_colleges co ON co.tenant_id=s.tenant_id AND co.id=s.college_id").Where("s.tenant_id=?", tid)
+			q = db.Table("uni_teachers s").Select("s.teacher_no AS number,s.name,s.gender,s.phone,s.email,s.status,s.title,co.name AS org_name,co.code AS org_code").Joins("JOIN uni_colleges co ON co.tenant_id=s.tenant_id AND co.id=s.college_id").Where("s.tenant_id=?", tid)
 		}
 		if k := strings.TrimSpace(c.Query("keyword")); k != "" {
 			col := "s.teacher_no"
@@ -482,11 +483,38 @@ func excelExport(student bool) gin.HandlerFunc {
 				q = q.Where("s.enrollment_year=?", year)
 			}
 		}
-		if e = q.Order("s.id DESC").Limit(50001).Scan(&rows).Error; e != nil || len(rows) > 50000 {
-			studentError(c, 400, "导出失败或超过50000条，请缩小筛选范围")
+		rows, err := q.Order("s.id DESC").Limit(50001).Rows()
+		if err != nil {
+			studentError(c, 500, "导出查询失败")
 			return
 		}
-		for i, r := range rows {
+		defer rows.Close()
+		f := excelize.NewFile()
+		defer f.Close()
+		stream, err := f.NewStreamWriter("Sheet1")
+		if err != nil || stream.SetColWidth(1, len(indices), 24) != nil {
+			studentError(c, 500, "生成导出文件失败")
+			return
+		}
+		header := make([]interface{}, len(selectedHeaders))
+		for i, value := range selectedHeaders {
+			header[i] = value
+		}
+		if err := stream.SetRow("A1", header); err != nil {
+			studentError(c, 500, "写入导出表头失败")
+			return
+		}
+		values := make([]interface{}, len(indices))
+		for index := 2; rows.Next(); index++ {
+			if index > 50001 {
+				studentError(c, 400, "导出超过50000条，请缩小筛选范围")
+				return
+			}
+			var r row
+			if err := db.ScanRows(rows, &r); err != nil {
+				studentError(c, 500, "读取导出记录失败")
+				return
+			}
 			g := map[int]string{0: "未填写", 1: "男", 2: "女"}[r.Gender]
 			status := "在职"
 			if student {
@@ -504,13 +532,17 @@ func excelExport(student bool) gin.HandlerFunc {
 			if student {
 				v = []string{r.Number, r.Name, org, a, g, strconv.Itoa(r.EnrollmentYear), r.Phone, r.Email, status}
 			}
-			for j, index := range indices {
-				cell, _ := excelize.CoordinatesToCellName(j+1, i+2)
-				if e = f.SetCellStr("Sheet1", cell, v[index]); e != nil {
-					studentError(c, 500, "导出失败")
-					return
-				}
+			for j, selected := range indices {
+				values[j] = v[selected]
 			}
+			if err := stream.SetRow("A"+strconv.Itoa(index), values); err != nil {
+				studentError(c, 500, "写入导出记录失败")
+				return
+			}
+		}
+		if rows.Err() != nil || stream.Flush() != nil {
+			studentError(c, 500, "生成导出文件失败")
+			return
 		}
 		excelSend(c, f, "records")
 	}

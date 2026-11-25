@@ -1,6 +1,7 @@
 package university
 
 import (
+	"context"
 	"net/http"
 	"slices"
 	"strconv"
@@ -112,7 +113,9 @@ func universityLeaveReport(c *gin.Context) {
 		leaveFail(c, 400, "报表格式不合法")
 		return
 	}
-	db := global.GVA_DB.WithContext(c.Request.Context())
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 12*time.Second)
+	defer cancel()
+	db := global.GVA_DB.WithContext(ctx)
 	scope, ok := studentReportScope(c, db)
 	if !ok {
 		leaveFail(c, 400, "组织或学生筛选不合法")

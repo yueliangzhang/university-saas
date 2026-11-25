@@ -1,6 +1,7 @@
 package university
 
 import (
+	"context"
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/gin-gonic/gin"
@@ -14,13 +15,32 @@ func dashboardAnalytics(c *gin.Context) {
 		universityLeaveReport(c)
 		return
 	}
-	tenant := c.MustGet("monitorTenant")
+	tenant := c.GetUint64("monitorTenant")
 	days, e := strconv.Atoi(c.DefaultQuery("days", "7"))
 	if e != nil || (days != 7 && days != 30 && days != 90) {
 		leaveFail(c, 400, "日期范围错误")
 		return
 	}
-	db := global.GVA_DB.WithContext(c.Request.Context())
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 8*time.Second)
+	defer cancel()
+	db := global.GVA_DB.WithContext(ctx)
+	filters := map[string]uint64{}
+	for k := range map[string]string{"collegeId": "co.id", "majorId": "ma.id", "classId": "cl.id"} {
+		if v := c.Query(k); v != "" {
+			id, err := strconv.ParseUint(v, 10, 64)
+			if err != nil || id == 0 {
+				leaveFail(c, 400, "筛选错误")
+				return
+			}
+			filters[k] = id
+		}
+	}
+	role := utils.GetUserAuthorityId(c)
+	cacheKey := dashboardCacheKey(tenant, uint64(role), days, filters)
+	if cached := readDashboardCache(ctx, cacheKey); cached != nil {
+		leaveOK(c, cached)
+		return
+	}
 	// Match the existing monitor's database clock and DATETIME convention.
 	var clock struct {
 		Now   string
@@ -40,17 +60,6 @@ func dashboardAnalytics(c *gin.Context) {
 	base := func() *gorm.DB {
 		return db.Table("uni_students s").Joins("JOIN uni_classes cl ON cl.id=s.class_id AND cl.tenant_id=s.tenant_id").Joins("JOIN uni_majors ma ON ma.id=cl.major_id AND ma.tenant_id=s.tenant_id").Joins("JOIN uni_colleges co ON co.id=ma.college_id AND co.tenant_id=s.tenant_id").Where("s.tenant_id=?", tenant)
 	}
-	filters := map[string]uint64{}
-	for k := range map[string]string{"collegeId": "co.id", "majorId": "ma.id", "classId": "cl.id"} {
-		if v := c.Query(k); v != "" {
-			id, err := strconv.ParseUint(v, 10, 64)
-			if err != nil || id == 0 {
-				leaveFail(c, 400, "筛选错误")
-				return
-			}
-			filters[k] = id
-		}
-	}
 	students := func() *gorm.DB {
 		q := base()
 		for k, col := range map[string]string{"collegeId": "co.id", "majorId": "ma.id", "classId": "cl.id"} {
@@ -64,18 +73,26 @@ func dashboardAnalytics(c *gin.Context) {
 		return students().Joins("JOIN uni_leave_requests l ON l.student_id=s.id AND l.tenant_id=s.tenant_id")
 	}
 	period := func() *gorm.DB { return leaves().Where("l.start_at<? AND l.end_at>?", end, start) }
-	var total, todayN, current, pending int64
+	var total int64
+	var counts struct {
+		Today, CurrentCount, Pending int64
+	}
 	fail := func() { leaveFail(c, 500, "统计查询失败") }
-	if students().Where("s.status=1").Count(&total).Error != nil || leaves().Where("s.status=1 AND l.status='approved' AND l.start_at<? AND l.end_at>?", end, clock.Today).Distinct("s.id").Count(&todayN).Error != nil || leaves().Where("s.status=1 AND l.status='approved' AND l.start_at<=? AND l.end_at>?", clock.Now, clock.Now).Distinct("s.id").Count(&current).Error != nil || leaves().Where("l.status='pending'").Count(&pending).Error != nil {
+	if students().Where("s.status=1").Count(&total).Error != nil ||
+		leaves().Where("l.status='pending' OR (s.status=1 AND l.status='approved' AND l.start_at<? AND l.end_at>?)", end, clock.Today).
+			Select(`COUNT(DISTINCT CASE WHEN s.status=1 AND l.status='approved' THEN s.id END) AS today,
+			        COUNT(DISTINCT CASE WHEN s.status=1 AND l.status='approved' AND l.start_at<=? AND l.end_at>? THEN s.id END) AS current_count,
+			        COUNT(CASE WHEN l.status='pending' THEN 1 END) AS pending`, clock.Now, clock.Now).
+			Scan(&counts).Error != nil {
 		fail()
 		return
 	}
 	rate := float64(0)
 	if total > 0 {
-		rate = 100 * float64(todayN) / float64(total)
+		rate = 100 * float64(counts.Today) / float64(total)
 	}
-	out := gin.H{"today": todayN, "current": current, "pending": pending, "rate": rate, "asOf": clock.Now}
-	if utils.GetUserAuthorityId(c) == 2001 {
+	out := gin.H{"today": counts.Today, "current": counts.CurrentCount, "pending": counts.Pending, "rate": rate, "asOf": clock.Now}
+	if role == 2001 {
 		counts := gin.H{}
 		for k, t := range map[string]string{"students": "uni_students", "teachers": "uni_teachers", "colleges": "uni_colleges", "majors": "uni_majors", "classes": "uni_classes"} {
 			var n int64
@@ -100,10 +117,6 @@ func dashboardAnalytics(c *gin.Context) {
 		out[k] = rows
 	}
 	trend := []point{}
-	for i := 0; i < days; i++ {
-		d := today.AddDate(0, 0, i+1-days)
-		trend = append(trend, point{Name: d.Format("2006-01-02")})
-	}
 	// One recursive date series query, bounded to 90 days.
 	sub := period().Where("s.status=1 AND l.status='approved'").Select("s.id AS student_id,l.start_at,l.end_at")
 	if db.Raw("WITH RECURSIVE dates AS (SELECT CAST(? AS DATE) AS d UNION ALL SELECT d+INTERVAL 1 DAY FROM dates WHERE d+INTERVAL 1 DAY<CAST(? AS DATE)) SELECT DATE_FORMAT(d,'%Y-%m-%d') AS name,COUNT(DISTINCT x.student_id) AS count FROM dates LEFT JOIN (?) x ON x.start_at<d+INTERVAL 1 DAY AND x.end_at>d GROUP BY d ORDER BY d", start, end, sub).Scan(&trend).Error != nil {
@@ -145,5 +158,6 @@ func dashboardAnalytics(c *gin.Context) {
 		return
 	}
 	out["tenantName"] = school.Name
+	writeDashboardCache(ctx, cacheKey, out)
 	leaveOK(c, out)
 }

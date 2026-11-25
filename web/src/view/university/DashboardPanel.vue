@@ -27,12 +27,7 @@ import {defineAsyncComponent,ref,computed,onMounted,onUnmounted,onActivated,onDe
 import { useSessionStorage, StorageSerializers } from '@vueuse/core'
 import {useRouter} from 'vue-router'
 import request from '@/utils/request'
-import VChart from 'vue-echarts'
-import {use} from 'echarts/core'
-import {CanvasRenderer} from 'echarts/renderers'
-import {LineChart,PieChart} from 'echarts/charts'
-import {GridComponent,TooltipComponent,LegendComponent} from 'echarts/components'
-use([CanvasRenderer,LineChart,PieChart,GridComponent,TooltipComponent,LegendComponent])
+const VChart = defineAsyncComponent(() => import('./UniversityChart.vue'))
 const props=defineProps({admin:Boolean})
 const UniversityReports = defineAsyncComponent(() => import('./UniversityReports.vue'))
 const currentView = ref('dashboard')
@@ -52,7 +47,7 @@ function resetFilters() {
   days.value = 7
   refresh()
 }
-function start(){active=true;if(!timer)timer=setInterval(()=>{if(!loading.value && currentView.value === 'dashboard')refresh()},60000)}
+function start(){active=true;if(!timer)timer=setInterval(()=>{if(!document.hidden && !loading.value && currentView.value === 'dashboard')refresh()},60000)}
 function stop(){active=false;++seq;clearInterval(timer);timer=null;loading.value=false}
 onMounted(async()=>{start();try{const r=await request({url:'/uni/monitor/options',method:'get'});if(r.code===0)options.value=r.data}catch(e){error.value='组织筛选加载失败'}if(active)refresh()});onActivated(()=>{start();if(data.value)refresh()});onDeactivated(stop);onUnmounted(stop)
 </script>

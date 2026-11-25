@@ -15,17 +15,19 @@ func initRedisClient(redisCfg config.Redis) (redis.UniversalClient, error) {
 	// 使用集群模式
 	if redisCfg.UseCluster {
 		client = redis.NewClusterClient(&redis.ClusterOptions{
-			Addrs:    redisCfg.ClusterAddrs,
-			Username: redisCfg.Username,
-			Password: redisCfg.Password,
+			Addrs:                 redisCfg.ClusterAddrs,
+			Username:              redisCfg.Username,
+			Password:              redisCfg.Password,
+			ContextTimeoutEnabled: true,
 		})
 	} else {
 		// 使用单例模式
 		client = redis.NewClient(&redis.Options{
-			Addr:     redisCfg.Addr,
-			Username: redisCfg.Username,
-			Password: redisCfg.Password,
-			DB:       redisCfg.DB,
+			Addr:                  redisCfg.Addr,
+			Username:              redisCfg.Username,
+			Password:              redisCfg.Password,
+			ContextTimeoutEnabled: true,
+			DB:                    redisCfg.DB,
 		})
 	}
 	pong, err := client.Ping(context.Background()).Result()

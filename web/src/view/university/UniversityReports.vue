@@ -63,10 +63,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import VChart from 'vue-echarts'
 import request from '@/utils/request'
+
+const VChart = defineAsyncComponent(() => import('./UniversityChart.vue'))
 
 const props = defineProps({ options: { type: Object, required: true } })
 const periods = { day: '日报', week: '周报', month: '月报', term: '学期报表', custom: '自定义报表' }
