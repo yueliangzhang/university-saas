@@ -15,7 +15,7 @@
         <h1>教师管理</h1>
         <p>管理教师档案、学院归属与在职状态</p>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap"><el-button type="primary" @click="openCreate">新增教师</el-button><ExcelImport kind="teachers" :filters="{keyword,collegeId:filterCollege||undefined}" @imported="search" /></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><el-button type="primary" @click="openCreate">新增教师</el-button><ExcelImport kind="teachers" :filters="{keyword,collegeId:filterCollege||undefined}" @imported="search" /><el-button type="danger" plain :loading="deleting" :disabled="loading || !selectedRows.length" @click="removeSelected">批量删除</el-button></div>
     </header>
 
     <section class="teacher-panel">
@@ -38,18 +38,19 @@
       </el-form>
 
       <div class="teacher-table-scroll">
-        <el-table v-loading="loading" :data="rows" style="width:100%" empty-text="暂无教师档案">
-          <el-table-column prop="teacherNo" label="教师工号" min-width="125" />
-          <el-table-column prop="name" label="姓名" min-width="110">
+        <el-table v-loading="loading" :data="rows" style="width:100%" empty-text="暂无教师档案" @selection-change="selectedRows = $event" @sort-change="changeSort">
+          <el-table-column type="selection" width="48" />
+          <el-table-column prop="teacherNo" label="教师工号" min-width="125" sortable="custom" />
+          <el-table-column prop="name" label="姓名" min-width="110" sortable="custom">
             <template #default="{ row }"><span class="teacher-name">{{ row.name }}</span></template>
           </el-table-column>
-          <el-table-column label="所属学院" min-width="150">
+          <el-table-column label="所属学院" min-width="150" sortable="custom" prop="collegeName">
             <template #default="{ row }">{{ collegeName(row.collegeId) }}</template>
           </el-table-column>
-          <el-table-column prop="title" label="职称" min-width="100" />
-          <el-table-column prop="phone" label="电话" min-width="130" />
-          <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip />
-          <el-table-column label="状态" width="100">
+          <el-table-column prop="title" label="职称" min-width="100" sortable="custom" />
+          <el-table-column prop="phone" label="电话" min-width="130" sortable="custom" />
+          <el-table-column prop="email" label="邮箱" min-width="160" show-overflow-tooltip sortable="custom" />
+          <el-table-column label="状态" width="100" sortable="custom" prop="status">
             <template #default="{ row }"><el-tag size="small" :type="row.status===1?'success':'info'" effect="light">{{ row.status===1?'在职':'停用' }}</el-tag></template>
           </el-table-column>
           <el-table-column label="操作" width="150" fixed="right">
@@ -94,12 +95,42 @@ const uniTeacherTab = uniMergeRef('profiles')
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
+import { useRecordTable } from './useRecordTable'
 const rows=ref([]),colleges=ref([]),keyword=ref(''),filterCollege=ref(null),page=ref(1),pageSize=ref(20),total=ref(0)
 const loading=ref(false),saving=ref(false),dialog=ref(false),editing=ref(false),form=ref({})
 const activeColleges=computed(()=>colleges.value.filter(c=>c.status===1))
 const collegeName=id=>colleges.value.find(c=>c.id===id)?.name||`学院 #${id}`
 const api=(method='get',data,params)=>request({url:'/uni/teachers',method,data,params})
-const load=async()=>{loading.value=true;try{const r=await api('get',undefined,{page:page.value,pageSize:pageSize.value,keyword:keyword.value,collegeId:filterCollege.value||undefined});if(r?.code!==0)throw Error(r?.msg||'加载失败');rows.value=r.data?.list||[];total.value=r.data?.total||0}catch(e){ElMessage.error(e.message||'加载失败')}finally{loading.value=false}}
+let loadVersion = 0
+const load = async () => {
+  const version = ++loadVersion
+  loading.value = true
+  try {
+    const result = await api('get', undefined, {
+      page: page.value, pageSize: pageSize.value, keyword: keyword.value,
+      collegeId: filterCollege.value || undefined,
+      ...sort.value
+    })
+    if (version !== loadVersion) return
+    if (result?.code !== 0) throw new Error(result?.msg || '加载失败')
+    rows.value = result.data?.list || []
+    total.value = result.data?.total || 0
+    const lastPage = Math.max(1, Math.ceil(total.value / pageSize.value))
+    if (page.value > lastPage) page.value = lastPage
+  } catch (error) {
+    if (version === loadVersion) ElMessage.error(error.message || '加载失败')
+  } finally {
+    if (version === loadVersion) loading.value = false
+  }
+}
+const { selectedRows, deleting, removeSelected, sort, setSort } = useRecordTable(
+  ids => api('delete', undefined, { ids }),
+  load
+)
+const changeSort = event => {
+  setSort(event)
+  search()
+}
 const loadColleges=async()=>{try{const r=await request({url:'/uni/org/colleges',method:'get'});if(r?.code!==0)throw Error(r?.msg||'学院加载失败');colleges.value=r.data?.list||[]}catch(e){ElMessage.error(e.message||'学院加载失败')}}
 const search=()=>{page.value=1;load()}
 const reset=()=>{keyword.value='';filterCollege.value=null;search()}

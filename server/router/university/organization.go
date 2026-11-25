@@ -2,7 +2,6 @@ package university
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
@@ -233,18 +232,20 @@ func orgDelete(kind string) gin.HandlerFunc {
 			orgFail(c, 403, "缺少高校身份")
 			return
 		}
-		id, err := strconv.ParseUint(c.Query("id"), 10, 64)
-		if err != nil || id == 0 {
-			orgFail(c, 400, "id 不合法")
+		ids, ok := deletionIDs(c, kind == "classes")
+		if !ok {
+			orgFail(c, 400, "记录 ID 不合法")
 			return
 		}
-		tx := global.GVA_DB.Table(orgTable(kind)).Where("tenant_id=? AND id=?", tid, id).Delete(&struct{}{})
-		if tx.Error != nil {
+		err := deleteRecords(func(tx *gorm.DB) *gorm.DB {
+			return tx.Table(orgTable(kind)).Where("tenant_id=? AND id IN ?", tid, ids).Delete(&struct{}{})
+		}, len(ids))
+		if err == gorm.ErrRecordNotFound {
+			orgFail(c, 404, "部分记录不存在，请刷新后重试")
+			return
+		}
+		if err != nil {
 			orgFail(c, 409, "删除失败：请先删除关联的下级数据")
-			return
-		}
-		if tx.RowsAffected == 0 {
-			orgFail(c, 404, "记录不存在")
 			return
 		}
 		orgOK(c, gin.H{"deleted": true})

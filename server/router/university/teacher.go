@@ -1,7 +1,6 @@
 package university
 
 import (
-	"gorm.io/gorm"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +8,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type uniTeacher struct {
@@ -88,7 +88,10 @@ func teacherList(c *gin.Context) {
 		return
 	}
 	var rows []uniTeacher
-	if err := q.Order("id DESC").Limit(size).Offset((page - 1) * size).Find(&rows).Error; err != nil {
+	if err := recordOrder(c, q, "id", map[string]string{
+		"teacherNo": "teacher_no", "name": "name", "title": "title", "phone": "phone", "email": "email", "status": "status",
+		"collegeName": "(SELECT co.name FROM uni_colleges co WHERE co.tenant_id=uni_teachers.tenant_id AND co.id=uni_teachers.college_id)",
+	}).Limit(size).Offset((page - 1) * size).Find(&rows).Error; err != nil {
 		teacherError(c, 500, "查询失败")
 		return
 	}
@@ -172,27 +175,29 @@ func teacherDelete(c *gin.Context) {
 		teacherError(c, 403, "缺少高校身份")
 		return
 	}
-	id, err := strconv.ParseUint(c.Query("id"), 10, 64)
-	if err != nil || id == 0 {
+	ids, ok := deletionIDs(c, true)
+	if !ok {
 		teacherError(c, 400, "教师ID不合法")
 		return
 	}
 	var n int64
-	if err := global.GVA_DB.Table("uni_students").Where("tenant_id=? AND advisor_id=?", tid, id).Count(&n).Error; err != nil {
+	if err := global.GVA_DB.Table("uni_students").Where("tenant_id=? AND advisor_id IN ?", tid, ids).Count(&n).Error; err != nil {
 		teacherError(c, 500, "校验关联学生失败")
 		return
 	}
 	if n > 0 {
-		teacherError(c, 409, "请先解除或转移该教师负责的学生")
+		teacherError(c, 409, "请先解除或转移所选教师负责的学生")
 		return
 	}
-	tx := global.GVA_DB.Where("tenant_id=? AND id=?", tid, id).Delete(&uniTeacher{})
-	if tx.Error != nil {
-		teacherError(c, 409, "删除失败：教师可能已被业务引用")
+	err := deleteRecords(func(tx *gorm.DB) *gorm.DB {
+		return tx.Where("tenant_id=? AND id IN ?", tid, ids).Delete(&uniTeacher{})
+	}, len(ids))
+	if err == gorm.ErrRecordNotFound {
+		teacherError(c, 404, "部分教师不存在，请刷新后重试")
 		return
 	}
-	if tx.RowsAffected == 0 {
-		teacherError(c, 404, "教师不存在")
+	if err != nil {
+		teacherError(c, 409, "删除失败：请先处理所选教师关联的业务记录")
 		return
 	}
 	teacherOK(c, gin.H{"deleted": true})

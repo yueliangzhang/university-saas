@@ -126,7 +126,11 @@ func studentList(c *gin.Context) {
 		return
 	}
 	var rows []uniStudent
-	if err := q.Select("s.*, COALESCE(t.name, '') AS advisor_name").Order("s.id DESC").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
+	if err := recordOrder(c, q, "s.id", map[string]string{
+		"studentNo": "s.student_no", "name": "s.name", "gender": "s.gender",
+		"className":   "(SELECT cl.name FROM uni_classes cl WHERE cl.tenant_id=s.tenant_id AND cl.id=s.class_id)",
+		"advisorName": "advisor_name", "enrollmentYear": "s.enrollment_year", "phone": "s.phone", "status": "s.status",
+	}).Select("s.*, COALESCE(t.name, '') AS advisor_name").Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		studentError(c, 500, "查询学生失败")
 		return
 	}
@@ -242,18 +246,20 @@ func studentDelete(c *gin.Context) {
 		studentError(c, 403, "缺少高校身份")
 		return
 	}
-	id, err := strconv.ParseUint(c.Query("id"), 10, 64)
-	if err != nil || id == 0 {
-		studentError(c, 400, "id 不合法")
+	ids, ok := deletionIDs(c, true)
+	if !ok {
+		studentError(c, 400, "学生ID不合法")
 		return
 	}
-	tx := global.GVA_DB.Where("tenant_id=? AND id=?", tid, id).Delete(&uniStudent{})
-	if tx.Error != nil {
-		studentError(c, 409, "删除失败：学生可能已被其他业务引用")
+	err := deleteRecords(func(tx *gorm.DB) *gorm.DB {
+		return tx.Where("tenant_id=? AND id IN ?", tid, ids).Delete(&uniStudent{})
+	}, len(ids))
+	if err == gorm.ErrRecordNotFound {
+		studentError(c, 404, "部分学生不存在，请刷新后重试")
 		return
 	}
-	if tx.RowsAffected == 0 {
-		studentError(c, 404, "学生不存在")
+	if err != nil {
+		studentError(c, 409, "删除失败：请先处理所选学生关联的业务记录")
 		return
 	}
 	studentOK(c, gin.H{"deleted": true})

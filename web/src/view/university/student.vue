@@ -6,7 +6,7 @@
         <h1>学生管理</h1>
         <p>统一管理学生档案、请假审批与登录账号</p>
       </div>
-      <div v-if="activeTab === 'profile'" style="display:flex;gap:8px;flex-wrap:wrap"><el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button><ExcelImport kind="students" :filters="{keyword, classId:filterClass||undefined, advisorId:filterAdvisor??undefined}" @imported="search" /></div>
+      <div v-if="activeTab === 'profile'" style="display:flex;gap:8px;flex-wrap:wrap"><el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button><ExcelImport kind="students" :filters="{keyword, classId:filterClass||undefined, advisorId:filterAdvisor??undefined}" @imported="search" /><el-button type="danger" plain :loading="deleting" :disabled="loading || !selectedRows.length" @click="removeSelected">批量删除</el-button></div>
     </div>
 
     <nav class="uni-student-tabs" aria-label="学生管理功能">
@@ -35,25 +35,26 @@
       </el-form>
 
       <div class="uni-student-table-scroll">
-        <el-table v-loading="loading" :data="rows" stripe style="width:100%" empty-text="暂无符合条件的学生">
-          <el-table-column prop="studentNo" label="学号" min-width="130">
+        <el-table v-loading="loading" :data="rows" stripe style="width:100%" empty-text="暂无符合条件的学生" @selection-change="selectedRows = $event" @sort-change="changeSort">
+          <el-table-column type="selection" width="48" />
+          <el-table-column prop="studentNo" label="学号" min-width="130" sortable="custom">
             <template #default="{row}"><span class="uni-student-number">{{ row.studentNo }}</span></template>
           </el-table-column>
-          <el-table-column prop="name" label="姓名" min-width="150">
+          <el-table-column prop="name" label="姓名" min-width="150" sortable="custom">
             <template #default="{row}"><span class="uni-student-name">{{ row.name }}</span></template>
           </el-table-column>
-          <el-table-column label="性别" width="85">
+          <el-table-column label="性别" width="85" sortable="custom" prop="gender">
             <template #default="{row}">{{ ['未填写','男','女'][row.gender] || '未知' }}</template>
           </el-table-column>
-          <el-table-column label="所属班级" min-width="180" show-overflow-tooltip>
+          <el-table-column label="所属班级" min-width="180" show-overflow-tooltip sortable="custom" prop="className">
             <template #default="{row}">{{ className(row.classId) }}</template>
           </el-table-column>
-          <el-table-column label="所属辅导员" min-width="135"><template #default="{row}">{{row.advisorName || '未分配'}}</template></el-table-column>
-          <el-table-column prop="enrollmentYear" label="入学年份" width="110" />
-          <el-table-column prop="phone" label="联系电话" min-width="140" show-overflow-tooltip>
+          <el-table-column label="所属辅导员" min-width="135" sortable="custom" prop="advisorName"><template #default="{row}">{{row.advisorName || '未分配'}}</template></el-table-column>
+          <el-table-column prop="enrollmentYear" label="入学年份" width="110" sortable="custom" />
+          <el-table-column prop="phone" label="联系电话" min-width="140" show-overflow-tooltip sortable="custom">
             <template #default="{row}">{{ row.phone || '—' }}</template>
           </el-table-column>
-          <el-table-column label="学籍状态" width="110">
+          <el-table-column label="学籍状态" width="110" sortable="custom" prop="status">
             <template #default="{row}"><el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light" size="small">{{ row.status === 1 ? '在读' : '停用' }}</el-tag></template>
           </el-table-column>
           <el-table-column label="操作" width="142" fixed="right" align="right">
@@ -95,6 +96,7 @@ import StudentLeavePanel from './studentLeavePanel.vue'
 import StudentAccountPanel from './studentAccountPanel.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
+import { useRecordTable } from './useRecordTable'
 const activeTab=ref('profile')
 const teachers=ref([]),filterAdvisor=ref(null),advisorChoice=ref('auto')
 const loadTeachers=async()=>{try{const all=[];for(let p=1;;p++){const r=await request({url:'/uni/teachers',method:'get',params:{page:p,pageSize:100}});if(r?.code!==0)throw Error(r?.msg||'教师加载失败');const chunk=r.data?.list||[];all.push(...chunk);if(!chunk.length||all.length>=r.data.total)break}teachers.value=all}catch(e){ElMessage.error(e.message)}}
@@ -104,7 +106,36 @@ const loading=ref(false),saving=ref(false),dialog=ref(false),editing=ref(false),
 const activeClasses=computed(()=>classes.value.filter(x=>x.status===1 && majors.value.some(m=>m.id===x.majorId && m.status===1 && colleges.value.some(c=>c.id===m.collegeId && c.status===1))))
 const className=id=>classes.value.find(x=>x.id===id)?.name||`班级 #${id}`
 const api=(method='get',data,params)=>request({url:'/uni/students',method,data,params})
-const load=async()=>{loading.value=true;try{const r=await api('get',undefined,{page:page.value,pageSize:pageSize.value,keyword:keyword.value,classId:filterClass.value||undefined,advisorId:filterAdvisor.value ?? undefined});if(r?.code!==0)throw Error(r?.msg||'加载失败');rows.value=r.data?.list||[];total.value=r.data?.total||0}catch(e){ElMessage.error(e.message)}finally{loading.value=false}}
+let loadVersion = 0
+const load = async () => {
+  const version = ++loadVersion
+  loading.value = true
+  try {
+    const result = await api('get', undefined, {
+      page: page.value, pageSize: pageSize.value, keyword: keyword.value,
+      classId: filterClass.value || undefined, advisorId: filterAdvisor.value ?? undefined,
+      ...sort.value
+    })
+    if (version !== loadVersion) return
+    if (result?.code !== 0) throw new Error(result?.msg || '加载失败')
+    rows.value = result.data?.list || []
+    total.value = result.data?.total || 0
+    const lastPage = Math.max(1, Math.ceil(total.value / pageSize.value))
+    if (page.value > lastPage) page.value = lastPage
+  } catch (error) {
+    if (version === loadVersion) ElMessage.error(error.message || '加载失败')
+  } finally {
+    if (version === loadVersion) loading.value = false
+  }
+}
+const { selectedRows, deleting, removeSelected, sort, setSort } = useRecordTable(
+  ids => api('delete', undefined, { ids }),
+  load
+)
+const changeSort = event => {
+  setSort(event)
+  search()
+}
 const loadOptions=async()=>{try{for(const [kind,target] of [['colleges',colleges],['majors',majors],['classes',classes]]){const r=await request({url:`/uni/org/${kind}`,method:'get'});if(r?.code!==0)throw Error(r?.msg||'组织架构加载失败');target.value=r.data?.list||[]}}catch(e){ElMessage.error(e.message)}}
 const search=()=>{page.value=1;load()}
 const reset=()=>{keyword.value='';filterClass.value=null;filterAdvisor.value=null;search()}

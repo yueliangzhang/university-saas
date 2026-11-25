@@ -26,6 +26,7 @@
         <div><h2>组织信息管理</h2><p>切换分类，查看与维护学校组织数据</p></div>
         <div class="org-actions">
           <ExcelImport v-if="tab === 'classes'" kind="classes" @imported="reloadOrganization" />
+          <el-button v-if="tab === 'classes'" type="danger" plain :loading="deleting" :disabled="loading || !selectedRows.length" @click="removeSelected">批量删除</el-button>
           <el-button type="primary" class="org-create" @click="openCreate">＋ 新增{{ labels[tab] }}</el-button>
         </div>
       </div>
@@ -55,21 +56,22 @@
         </div>
       </div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="org-error" />
-      <el-table v-loading="loading" :data="pageRows" class="org-table" row-key="id" empty-text="暂无符合条件的组织数据">
-        <el-table-column prop="code" label="组织编码" min-width="130">
+      <el-table v-loading="loading" :data="pageRows" class="org-table" row-key="id" empty-text="暂无符合条件的组织数据" :key="tab" @selection-change="selectedRows = $event" @sort-change="changeSort">
+        <el-table-column v-if="tab === 'classes'" type="selection" width="48" />
+        <el-table-column prop="code" label="组织编码" min-width="130" sortable="custom">
           <template #default="{row}"><span class="org-code">{{ row.code }}</span></template>
         </el-table-column>
-        <el-table-column prop="name" label="名称" min-width="190">
+        <el-table-column prop="name" label="名称" min-width="190" sortable="custom">
           <template #default="{row}"><strong class="org-name">{{ row.name }}</strong></template>
         </el-table-column>
-        <el-table-column v-if="tab==='majors'" label="所属学院" min-width="150">
+        <el-table-column v-if="tab==='majors'" label="所属学院" min-width="150" sortable="custom" prop="collegeName">
           <template #default="{row}">{{ collegeLabel(row.collegeId) }}</template>
         </el-table-column>
-        <el-table-column v-if="tab==='classes'" label="所属专业" min-width="150">
+        <el-table-column v-if="tab==='classes'" label="所属专业" min-width="150" sortable="custom" prop="majorName">
           <template #default="{row}">{{ majorLabel(row.majorId) }}</template>
         </el-table-column>
-        <el-table-column v-if="tab==='classes'" prop="enrollmentYear" label="入学年份" min-width="110" />
-        <el-table-column label="状态" width="115">
+        <el-table-column v-if="tab==='classes'" prop="enrollmentYear" label="入学年份" min-width="110" sortable="custom" />
+        <el-table-column label="状态" width="115" sortable="custom" prop="status">
           <template #default="{row}"><el-tag :type="row.status===1?'success':'info'" effect="light" round>{{ row.status===1?'启用':'停用' }}</el-tag></template>
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
@@ -118,6 +120,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
+import { useRecordTable } from './useRecordTable'
 import ExcelImport from './ExcelImport.vue'
 const labels={colleges:'学院',majors:'专业',classes:'班级'}
 const tab=ref('colleges'),rows=ref([]),colleges=ref([]),majors=ref([])
@@ -136,8 +139,27 @@ const filteredRows=computed(()=>rows.value.filter(row=>{
     && (statusFilter.value==='' || row.status===Number(statusFilter.value))
 }))
 const pageOffset = computed(() => (page.value - 1) * pageSize.value)
-const pageRows = computed(() => filteredRows.value.slice(pageOffset.value, pageOffset.value + pageSize.value))
+const collator = new Intl.Collator('zh-CN')
+const sortedRows = computed(() => {
+  const { sortBy, sortOrder } = sort.value
+  if (!sortBy) return filteredRows.value
+  const value = row => {
+    if (sortBy === 'collegeName') return collegeLabel(row.collegeId)
+    if (sortBy === 'majorName') return majorLabel(row.majorId)
+    return row[sortBy]
+  }
+  return [...filteredRows.value].sort((left, right) => {
+    const a = value(left)
+    const b = value(right)
+    const order = typeof a === 'number' && typeof b === 'number'
+      ? a - b
+      : collator.compare(a ?? '', b ?? '')
+    return (sortOrder === 'asc' ? order : -order) || right.id - left.id
+  })
+})
+const pageRows = computed(() => sortedRows.value.slice(pageOffset.value, pageOffset.value + pageSize.value))
 watch([tab, keyword, statusFilter, pageSize], () => { page.value = 1 })
+watch(tab, () => { sort.value = {}; selectedRows.value = [] })
 watch(() => filteredRows.value.length, (total) => {
   const lastPage = Math.max(1, Math.ceil(total / pageSize.value))
   if (page.value > lastPage) page.value = lastPage
@@ -172,6 +194,14 @@ const load = async () => {
   }
 }
 const reloadOrganization = () => Promise.all([load(), refreshOverview()])
+const { selectedRows, deleting, removeSelected, sort, setSort } = useRecordTable(
+  ids => api('classes', 'delete', undefined, { ids }),
+  reloadOrganization
+)
+const changeSort = event => {
+  setSort(event)
+  page.value = 1
+}
 const openCreate=async()=>{editing.value=false;form.value={code:'',name:'',status:1,collegeId:null,majorId:null,enrollmentYear:new Date().getFullYear()};await openDialog()}
 const openEdit=async row=>{editing.value=true;form.value={...row};await openDialog()}
 const openDialog=async()=>{try{if(tab.value==='majors')colleges.value=await fetchList('colleges');if(tab.value==='classes')majors.value=await fetchList('majors');dialog.value=true}catch(e){ElMessage.error(e.message)}}
