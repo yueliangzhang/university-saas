@@ -1,6 +1,7 @@
 package university
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -155,7 +156,12 @@ func leaveWrite(update bool) gin.HandlerFunc {
 			return
 		}
 		row := uniLeave{TenantID: tid, StudentID: in.StudentID, LeaveType: in.LeaveType, Reason: in.Reason, StartAt: start, EndAt: end, Status: "pending"}
-		if err := db.Create(&row).Error; err != nil {
+		if err := db.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&row).Error; err != nil {
+				return err
+			}
+			return recordLeaveNotifications(tx, tid, []uint64{row.ID}, "submitted")
+		}); err != nil {
 			leaveFail(c, 409, "创建失败")
 			return
 		}
@@ -180,13 +186,15 @@ func leaveReview(c *gin.Context) {
 	}
 	reviewer := uint64(utils.GetUserID(c))
 	now := time.Now()
-	tx := global.GVA_DB.Model(&uniLeave{}).Where("tenant_id=? AND id=? AND status='pending'", tid, in.ID).Updates(map[string]interface{}{"status": in.Action, "review_note": in.Note, "reviewer_id": reviewer, "reviewed_at": now})
-	if tx.Error != nil {
-		leaveFail(c, 500, "审批失败")
+	err := changePendingLeave(c, tid, in.ID, 0, map[string]interface{}{
+		"status": in.Action, "review_note": in.Note, "reviewer_id": reviewer, "reviewed_at": now,
+	}, in.Action)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		leaveFail(c, 409, "请假单不存在或已处理")
 		return
 	}
-	if tx.RowsAffected == 0 {
-		leaveFail(c, 409, "请假单不存在或已处理")
+	if err != nil {
+		leaveFail(c, 500, "审批失败")
 		return
 	}
 	leaveOK(c, gin.H{"id": in.ID, "status": in.Action})
@@ -202,17 +210,34 @@ func leaveCancel(c *gin.Context) {
 		leaveFail(c, 400, "参数不合法")
 		return
 	}
-	tx := global.GVA_DB.Model(&uniLeave{}).Where("tenant_id=? AND id=? AND status='pending'", tid, in.ID).Update("status", "cancelled")
-	if tx.Error != nil {
-		leaveFail(c, 500, "撤销失败")
+	err := changePendingLeave(c, tid, in.ID, 0, map[string]interface{}{"status": "cancelled"}, "cancelled")
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		leaveFail(c, 409, "记录不存在或已处理")
 		return
 	}
-	if tx.RowsAffected == 0 {
-		leaveFail(c, 409, "记录不存在或已处理")
+	if err != nil {
+		leaveFail(c, 500, "撤销失败")
 		return
 	}
 	leaveOK(c, gin.H{"id": in.ID, "status": "cancelled"})
 }
+func changePendingLeave(c *gin.Context, tenantID, leaveID, studentID uint64, values map[string]interface{}, event string) error {
+	return global.GVA_DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		q := tx.Model(&uniLeave{}).Where("tenant_id=? AND id=? AND status='pending'", tenantID, leaveID)
+		if studentID != 0 {
+			q = q.Where("student_id=?", studentID)
+		}
+		result := q.Updates(values)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return recordLeaveNotifications(tx, tenantID, []uint64{leaveID}, event)
+	})
+}
+
 func InitLeaveRouter(privateGroup *gin.RouterGroup) {
 	group := privateGroup.Group("uni").Use(middleware.TenantAuth())
 	group.GET("/leaves", leaveList)

@@ -32,7 +32,7 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 		global.GVA_DB = previous
 		_ = pool.Close()
 	})
-	if err := db.AutoMigrate(&uniLeave{}, &uniLeaveProof{}); err != nil {
+	if err := db.AutoMigrate(&uniLeave{}, &uniLeaveProof{}, &uniLeaveNotification{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
@@ -59,6 +59,10 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 	router.GET("/student/leaves", studentLeaveList)
 	router.GET("/student/leaves/:id/proof", studentLeaveProof)
 	router.GET("/teacher/leaves/:id/proof", teacherLeaveProof)
+	router.POST("/teacher/leaves/review", teacherLeaveReview)
+	router.POST("/student/leaves/cancel", studentLeaveCancel)
+	registerLeaveNotifications(router.Group("/student"), notificationStudent)
+	registerLeaveNotifications(router.Group("/teacher"), notificationAdvisor)
 
 	send := func(method, url, contentType string, body []byte, advisor string) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(method, url, bytes.NewReader(body))
@@ -188,6 +192,56 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 	badRange := send(http.MethodGet, "/student/leaves?from=2020-05-02&to=2020-05-01", "", nil, "")
 	if badRange.Code != http.StatusBadRequest {
 		t.Fatalf("invalid range returned %d", badRange.Code)
+	}
+
+	checkInbox := func(path, advisor string, unread int, events ...string) {
+		t.Helper()
+		response := send(http.MethodGet, path, "", nil, advisor)
+		var inbox struct {
+			Data struct {
+				List   []uniLeaveNotification
+				Unread int
+			}
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &inbox); err != nil || response.Code != http.StatusOK ||
+			inbox.Data.Unread != unread || len(inbox.Data.List) != len(events) {
+			t.Fatalf("unexpected inbox at %s: %d %s", path, response.Code, response.Body)
+		}
+		for index, event := range events {
+			if inbox.Data.List[index].Event != event {
+				t.Fatalf("unexpected inbox event at %s: %s", path, response.Body)
+			}
+		}
+	}
+	post := func(path, body, advisor string, status int) {
+		t.Helper()
+		response := send(http.MethodPost, path, "application/json", []byte(body), advisor)
+		if response.Code != status {
+			t.Fatalf("%s: %d %s", path, response.Code, response.Body)
+		}
+	}
+	checkInbox("/teacher/notifications", "", 2, "submitted", "submitted")
+	checkInbox("/teacher/notifications", "unassigned", 0)
+	post("/teacher/notifications/read", `{"id":1}`, "unassigned", http.StatusOK)
+	checkInbox("/teacher/notifications", "", 2, "submitted", "submitted")
+	post("/teacher/notifications/read", `{"id":1}`, "", http.StatusOK)
+	checkInbox("/teacher/notifications?unreadOnly=true", "", 1)
+	post("/teacher/leaves/review", `{"id":1,"action":"approved"}`, "", http.StatusOK)
+	post("/teacher/leaves/review", `{"id":1,"action":"approved"}`, "", http.StatusConflict)
+	post("/student/leaves/cancel", `{"id":2}`, "", http.StatusOK)
+	post("/student/leaves/cancel", `{"id":2}`, "", http.StatusConflict)
+	checkInbox("/student/notifications", "", 1, "approved")
+	checkInbox("/teacher/notifications", "", 2, "cancelled", "submitted", "submitted")
+	post("/teacher/notifications/read", `{"all":true}`, "", http.StatusOK)
+	checkInbox("/teacher/notifications", "", 0, "cancelled", "submitted", "submitted")
+	if err := db.Exec("UPDATE uni_students SET advisor_id=4 WHERE id=2 AND tenant_id=1").Error; err != nil {
+		t.Fatal(err)
+	}
+	checkInbox("/teacher/notifications", "", 0)
+	checkInbox("/teacher/notifications", "unassigned", 0)
+	detail := send(http.MethodGet, "/student/leaves?id=1", "", nil, "")
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"total":1`) {
+		t.Fatalf("could not open linked leave: %s", detail.Body)
 	}
 
 }

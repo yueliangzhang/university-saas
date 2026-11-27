@@ -273,7 +273,10 @@ func teacherLeaveList(c *gin.Context) {
 		Where("s.advisor_id=?", teacher).
 		Joins("JOIN uni_classes cl ON cl.tenant_id=s.tenant_id AND cl.id=s.class_id").
 		Where("l.tenant_id=?", tid)
-	q := scope.Session(&gorm.Session{})
+	q, ok := filterLeaveID(c, scope.Session(&gorm.Session{}))
+	if !ok {
+		return
+	}
 	// Class filter is enforced in the database after the teacher/advisor join.
 	// A teacher cannot query another class by guessing its ID.
 	if raw := strings.TrimSpace(c.Query("classId")); raw != "" {
@@ -483,7 +486,7 @@ func teacherLeaveReview(c *gin.Context) {
 		if result.RowsAffected != int64(len(ids)) {
 			return gorm.ErrRecordNotFound
 		}
-		return nil
+		return recordLeaveNotifications(tx, tid, ids, in.Action)
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		teacherPortalFail(c, 409, "所选申请中有记录已审批、不存在或不属于你负责的学生")
@@ -687,6 +690,7 @@ func InitTeacherPortalRouter(publicGroup *gin.RouterGroup) {
 	protected.POST("/logout", teacherPortalLogout)
 	protected.GET("/classes", teacherAssignedClasses)
 	protected.GET("/students", teacherAssignedStudents)
+	registerLeaveNotifications(protected, notificationAdvisor)
 	protected.GET("/leaves", teacherLeaveList)
 	protected.GET("/leaves/:id/proof", teacherLeaveProof)
 	protected.POST("/leaves/review", teacherLeaveReview)

@@ -18,7 +18,7 @@
         <el-container class="main-container">
           <el-header class="topbar">
             <div class="topbar-left"><el-icon class="topbar-icon"><School /></el-icon><span>{{ me.schoolName || '高校学生服务平台' }}</span><span class="topbar-separator">/</span><strong>{{ currentTabLabel }}</strong></div>
-            <div class="topbar-right"><el-avatar :size="32">{{ (me?.name || '学').slice(0,1) }}</el-avatar></div>
+            <div class="topbar-right"><LeaveNotifications :call="callNotifications" :open-leave="openNotificationLeave" /><el-avatar :size="32">{{ (me?.name || '学').slice(0,1) }}</el-avatar></div>
           </el-header>
           <el-main class="content">
             <template v-if="activeTab==='dashboard'">
@@ -158,6 +158,7 @@ import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/pinia'
 import { downloadLeaveProof } from '@/utils/leaveProof'
+import LeaveNotifications from '@/components/university-ui/LeaveNotifications.vue'
 
 const mustChange = ref(false)
 const confirmPassword = ref('')
@@ -260,6 +261,14 @@ const dateFrom = ref('')
 const dateTo = ref('')
 const dateError = ref('')
 const selectedLeave = ref(null)
+const callNotifications = (url, method, data, params) => call('/uni/student-portal' + url, method, data, params)
+const openNotificationLeave = async id => {
+  const result = await call('/uni/student-portal/leaves', 'get', undefined, { id, pageSize: 1 })
+  const leave = result.list?.[0]
+  if (!leave) throw new Error('该请假记录已不可访问')
+  selectedLeave.value = leave
+}
+
 const cancelling = ref(false)
 const recentLeaves = ref([])
 const summary = ref(null)

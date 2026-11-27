@@ -3,6 +3,7 @@
     <div v-if="token" class="topbar">
       <div class="brand">{{ advisorMode ? '辅导员工作台' : '🎓 高校教师服务平台' }}</div>
       <div>
+        <LeaveNotifications v-if="me && !mustChange" :key="portalBase" :call="call" :open-leave="openNotificationLeave" />
         <el-button v-if="advisorMode" plain @click="returnToWorkspace">{{ userStore.userInfo.authorityId === 2002 ? '切换为请假监管员' : '切换为高校管理员' }}</el-button>
         <el-button plain @click="logout">退出登录</el-button>
       </div>
@@ -103,6 +104,10 @@
           <dt>审批意见</dt><dd>{{ selectedLeave.reviewNote || '—' }}</dd>
           <dt v-if="selectedLeave.hasProof">证明文件</dt><dd v-if="selectedLeave.hasProof"><el-button v-for="index in (selectedLeave.proofCount || 1)" :key="index" link type="primary" @click="downloadProof(selectedLeave, index)">附件 {{ index }}</el-button></dd>
         </dl>
+        <template #footer v-if="selectedLeave?.status === 'pending'">
+          <el-button type="success" :disabled="reviewing" @click="review([selectedLeave.id], 'approved')">通过</el-button>
+          <el-button type="danger" plain :disabled="reviewing" @click="review([selectedLeave.id], 'rejected')">驳回</el-button>
+        </template>
       </el-dialog>
       <el-dialog :model-value="!!selectedStudent" title="学生详情" width="min(480px,94vw)" @update:model-value="value => { if (!value) selectedStudent = null }">
         <dl v-if="selectedStudent" class="teacher-detail">
@@ -124,6 +129,7 @@ import {ElMessage,ElMessageBox} from 'element-plus'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
 import { downloadLeaveProof } from '@/utils/leaveProof'
+import LeaveNotifications from '@/components/university-ui/LeaveNotifications.vue'
 const base=(import.meta.env.VITE_BASE_API||'/api').replace(/\/$/,'')
 const client=axios.create({baseURL:base,timeout:15000})
 const mustChange = ref(false)
@@ -205,7 +211,7 @@ const types={personal:'事假',sick:'病假',other:'其他'},statuses={pending:'
 const fmt=s=>s?String(s).replace('T',' ').slice(0,16):''
 const error=e=>e.response?.data?.msg||e.message||'操作失败'
 const call = async (url, method = 'get', data, params) => {
-  const config = { url: portalBase.value + url, method, data, params }
+  const config = { url: portalBase.value + url, method, data, params, donNotShowLoading: url === '/notifications' }
   if (props.advisorMode) {
     const result = await request(config)
     if (result.code !== 0) throw new Error(result.msg || '请求失败')
@@ -214,6 +220,12 @@ const call = async (url, method = 'get', data, params) => {
   const result = await client({ ...config, headers: { Authorization: `Bearer ${token.value}` } })
   if (result.data?.code !== 0) throw new Error(result.data?.msg || '请求失败')
   return result.data.data
+}
+const openNotificationLeave = async id => {
+  const result = await call('/leaves', 'get', undefined, { id, pageSize: 1 })
+  const leave = result.list?.[0]
+  if (!leave) throw new Error('该请假记录已不可访问')
+  selectedLeave.value = leave
 }
 const clear = () => {
   teacherToken.value = ''

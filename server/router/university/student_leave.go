@@ -28,7 +28,10 @@ func studentLeaveList(c *gin.Context) {
 	if size > 100 {
 		size = 100
 	}
-	q := global.GVA_DB.Table("uni_leave_requests l").Where("l.tenant_id=? AND l.student_id=?", tid, sid)
+	q, ok := filterLeaveID(c, global.GVA_DB.Table("uni_leave_requests l").Where("l.tenant_id=? AND l.student_id=?", tid, sid))
+	if !ok {
+		return
+	}
 	if status := c.Query("status"); status != "" {
 		if !leaveStatusValid(status) {
 			studentAuthError(c, 400, "状态不合法")
@@ -181,7 +184,7 @@ func studentLeaveCreate(c *gin.Context) {
 				return err
 			}
 		}
-		return nil
+		return recordLeaveNotifications(tx, tid, []uint64{row.ID}, "submitted")
 	}); err != nil {
 		studentAuthError(c, 500, "提交失败")
 		return
@@ -205,13 +208,13 @@ func studentLeaveCancel(c *gin.Context) {
 		studentAuthError(c, 400, "请假单ID不合法")
 		return
 	}
-	r := global.GVA_DB.Model(&uniLeave{}).Where("tenant_id=? AND student_id=? AND id=? AND status='pending'", tid, sid, in.ID).Update("status", "cancelled")
-	if r.Error != nil {
-		studentAuthError(c, 500, "撤销失败")
+	err := changePendingLeave(c, tid, in.ID, sid, map[string]interface{}{"status": "cancelled"}, "cancelled")
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		studentAuthError(c, 409, "记录不存在、不是本人申请或已处理")
 		return
 	}
-	if r.RowsAffected != 1 {
-		studentAuthError(c, 409, "记录不存在、不是本人申请或已处理")
+	if err != nil {
+		studentAuthError(c, 500, "撤销失败")
 		return
 	}
 	studentAuthOK(c, gin.H{"id": in.ID, "status": "cancelled"})
@@ -220,6 +223,7 @@ func studentLeaveCancel(c *gin.Context) {
 // Public GVA router group, protected by V13's independent student-session middleware.
 func InitStudentLeaveRouter(publicGroup *gin.RouterGroup) {
 	g := publicGroup.Group("uni/student-portal").Use(studentPortalAuth())
+	registerLeaveNotifications(g, notificationStudent)
 	g.GET("/leaves", studentLeaveList)
 	g.GET("/leaves/:id/proof", studentLeaveProof)
 	g.POST("/leaves", studentLeaveCreate)

@@ -56,6 +56,7 @@ func InitAdvisorWorkspaceRouter(privateGroup *gin.RouterGroup) {
 	workspace.GET("/me", teacherPortalMe)
 	workspace.GET("/classes", teacherAssignedClasses)
 	workspace.GET("/students", teacherAssignedStudents)
+	registerLeaveNotifications(workspace, notificationAdvisor)
 	workspace.GET("/leaves", teacherLeaveList)
 	workspace.GET("/leaves/:id/proof", teacherLeaveProof)
 	workspace.POST("/leaves/review", teacherLeaveReview)

@@ -30,7 +30,7 @@ func TestAdvisorWorkspaceRequiresLinkedActiveTeacher(t *testing.T) {
 		global.GVA_DB = previous
 		_ = pool.Close()
 	})
-	if err := db.AutoMigrate(&uniLeave{}, &uniLeaveProof{}); err != nil {
+	if err := db.AutoMigrate(&uniLeave{}, &uniLeaveProof{}, &uniLeaveNotification{}); err != nil {
 		t.Fatal(err)
 	}
 	exec := func(sql string) {
@@ -107,7 +107,22 @@ func TestAdvisorWorkspaceRequiresLinkedActiveTeacher(t *testing.T) {
 		response.Data.Summary.Pending != 2 || len(response.Data.Summary.Trend) != 7 {
 		t.Fatalf("dashboard summary ignored scope or filtering: %v %s", err, body)
 	}
+	var notices []uniLeaveNotification
+	if err := db.Find(&notices).Error; err != nil || len(notices) != 0 {
+		t.Fatalf("failed batch left notifications: %+v, %v", notices, err)
+	}
 	postReview(`{"ids":[1,3],"action":"approved"}`, http.StatusOK)
+	if err := db.Order("leave_id").Find(&notices).Error; err != nil || len(notices) != 2 {
+		t.Fatalf("successful batch did not notify for each leave: %+v, %v", notices, err)
+	}
+	if notices[0].LeaveID != 1 || notices[1].LeaveID != 3 {
+		t.Fatalf("batch notified for the wrong leaves: %+v", notices)
+	}
+	for _, notice := range notices {
+		if notice.TenantID != 1 || notice.RecipientKind != notificationStudent || notice.RecipientID != 101 || notice.Event != "approved" {
+			t.Fatalf("batch notification has an incorrect recipient or event: %+v", notice)
+		}
+	}
 	export := get("leaves?format=xlsx&status=approved&keyword=A001", http.StatusOK)
 	if !strings.HasPrefix(export, "PK") {
 		t.Fatal("export did not return an XLSX archive")
