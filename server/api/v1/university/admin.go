@@ -50,7 +50,7 @@ func (AdminApi) Create(c *gin.Context) {
 	}
 	id, err := adminService.CreateAccountWithAdvisor(r.TenantID, r.Username, r.Password, r.NickName, r.AuthorityID, r.AdvisorTeacherNo, r.Phone, r.Email)
 	if err != nil {
-		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) || errors.Is(err, universityService.ErrAdvisorLink) || errors.Is(err, utils.ErrUniversityAccountPasswordLength) {
+		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) || errors.Is(err, universityService.ErrAdvisorLink) || errors.Is(err, utils.ErrUniversityAccountPasswordLength) || errors.Is(err, universityService.ErrInvalidAccountRole) {
 			response.FailWithMessage(err.Error(), c)
 		} else {
 			response.FailWithMessage("创建管理员失败，请检查参数或服务日志", c)
@@ -94,6 +94,7 @@ func (AdminApi) SetStatus(c *gin.Context) {
 type adminEditRequest struct {
 	TenantID         uint64  `json:"tenantId" binding:"required"`
 	MembershipID     uint64  `json:"membershipId" binding:"required"`
+	AuthorityID      *uint   `json:"authorityId"`
 	NickName         string  `json:"nickName"`
 	Phone            string  `json:"phone"`
 	Email            string  `json:"email"`
@@ -107,8 +108,8 @@ func (AdminApi) Edit(c *gin.Context) {
 		response.FailWithMessage("参数不合法", c)
 		return
 	}
-	if err := adminService.Edit(r.TenantID, r.MembershipID, r.NickName, r.Phone, r.Email, r.AdvisorTeacherNo); err != nil {
-		if errors.Is(err, universityService.ErrAdvisorLink) {
+	if err := adminService.Edit(r.TenantID, r.MembershipID, r.NickName, r.Phone, r.Email, r.AdvisorTeacherNo, r.AuthorityID); err != nil {
+		if errors.Is(err, universityService.ErrAdvisorLink) || errors.Is(err, universityService.ErrInvalidAccountRole) {
 			response.FailWithMessage(err.Error(), c)
 		} else {
 			response.FailWithMessage("修改失败", c)

@@ -17,10 +17,11 @@ import (
 const tenantAdminAuthorityID uint = 2001
 
 var (
-	ErrTenantNotActive = errors.New("高校不存在或已停用")
-	ErrUsernameTaken   = errors.New("用户名已存在")
-	ErrAdvisorLink     = errors.New("请选择本校有效且未关联其他高校账号的教师工号")
-	ErrMemberNotFound  = errors.New("高校账号不存在")
+	ErrTenantNotActive    = errors.New("高校不存在或已停用")
+	ErrUsernameTaken      = errors.New("用户名已存在")
+	ErrAdvisorLink        = errors.New("请选择本校有效且未关联其他高校账号的教师工号")
+	ErrInvalidAccountRole = errors.New("请选择高校管理员或请假监管员")
+	ErrMemberNotFound     = errors.New("高校账号不存在")
 )
 
 type AdminService struct{}
@@ -53,11 +54,9 @@ func (AdminService) CreateAccountWithAdvisor(tenantID uint64, username, password
 	if authorityID == 0 {
 		authorityID = 2001
 	}
-	role := "tenant_admin"
-	if authorityID == 2002 {
-		role = "leave_monitor"
-	} else if authorityID != 2001 {
-		return 0, errors.New("invalid role")
+	role := universityAccountRole(authorityID)
+	if role == "" {
+		return 0, ErrInvalidAccountRole
 	}
 	username = strings.TrimSpace(username)
 	nickName = strings.TrimSpace(nickName)
@@ -86,19 +85,28 @@ func (AdminService) CreateAccountWithAdvisor(tenantID uint64, username, password
 			}
 			return err
 		}
-		var count int64
-		if err := tx.Table("sys_users").Where("username = ?", username).Count(&count).Error; err != nil {
+		// Reclaim usernames from deleted university accounts without reviving their identity.
+		var previous systemModel.SysUser
+		err := tx.Unscoped().Select("id, authority_id, deleted_at").Where("username = ?", username).Take(&previous).Error
+		switch {
+		case err == nil:
+			if !previous.DeletedAt.Valid || (previous.AuthorityId != 2001 && previous.AuthorityId != 2002) || previous.ID == 1 {
+				return ErrUsernameTaken
+			}
+			result := tx.Unscoped().Model(&systemModel.SysUser{}).
+				Where("id = ? AND username = ? AND deleted_at IS NOT NULL AND authority_id = ?", previous.ID, username, previous.AuthorityId).
+				UpdateColumn("username", nil)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return ErrUsernameTaken
+			}
+		case !errors.Is(err, gorm.ErrRecordNotFound):
 			return err
 		}
-		if count > 0 {
-			return ErrUsernameTaken
-		}
-		var roleCount int64
-		if err := tx.Table("sys_authorities").Where("authority_id = ? AND deleted_at IS NULL", authorityID).Count(&roleCount).Error; err != nil {
+		if err := checkUniversityAuthority(tx, authorityID); err != nil {
 			return err
-		}
-		if roleCount != 1 {
-			return errors.New("高校管理员系统角色2001不存在")
 		}
 
 		// Map inserts deliberately avoid GVA model hooks/associations; role is explicitly fixed server-side.
@@ -109,7 +117,7 @@ func (AdminService) CreateAccountWithAdvisor(tenantID uint64, username, password
 		}
 		if err := tx.Table("sys_users").Create(user).Error; err != nil {
 			// DB unique index is authoritative, including concurrent requests.
-			if isDuplicateKey(err) {
+			if isDuplicateKey(err) || errors.Is(err, gorm.ErrDuplicatedKey) {
 				return ErrUsernameTaken
 			}
 			return err
@@ -137,6 +145,28 @@ func (AdminService) CreateAccountWithAdvisor(tenantID uint64, username, password
 		return nil
 	})
 	return userID, err
+}
+
+func universityAccountRole(authorityID uint) string {
+	switch authorityID {
+	case 2001:
+		return "tenant_admin"
+	case 2002:
+		return "leave_monitor"
+	default:
+		return ""
+	}
+}
+
+func checkUniversityAuthority(tx *gorm.DB, authorityID uint) error {
+	var count int64
+	if err := tx.Table("sys_authorities").Where("authority_id = ? AND deleted_at IS NULL", authorityID).Count(&count).Error; err != nil {
+		return err
+	}
+	if count != 1 {
+		return ErrInvalidAccountRole
+	}
+	return nil
 }
 
 func isDuplicateKey(err error) bool {
@@ -199,10 +229,13 @@ func adminMutation(tid, mid uint64, fn func(*gorm.DB, uint64) error) error {
 		return fn(tx, row.UserID)
 	})
 }
-func (AdminService) Edit(tid, mid uint64, name, phone, email string, advisorTeacherNo *string) error {
+func (AdminService) Edit(tid, mid uint64, name, phone, email string, advisorTeacherNo *string, authorityID *uint) error {
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > 191 || len(phone) > 64 || len(email) > 191 {
 		return errors.New("参数不合法")
+	}
+	if authorityID != nil && universityAccountRole(*authorityID) == "" {
+		return ErrInvalidAccountRole
 	}
 	return adminMutation(tid, mid, func(tx *gorm.DB, uid uint64) error {
 		if advisorTeacherNo != nil {
@@ -210,9 +243,38 @@ func (AdminService) Edit(tid, mid uint64, name, phone, email string, advisorTeac
 				return err
 			}
 		}
-		return tx.Table("sys_users").Where("id=?", uid).Updates(map[string]interface{}{"nick_name": name, "phone": phone, "email": email, "updated_at": time.Now()}).Error
+		now := time.Now()
+		updates := map[string]interface{}{"nick_name": name, "phone": phone, "email": email, "updated_at": now}
+		if authorityID != nil {
+			var current systemModel.SysUser
+			if err := tx.Select("authority_id").First(&current, uid).Error; err != nil {
+				return err
+			}
+			if current.AuthorityId != *authorityID {
+				if err := checkUniversityAuthority(tx, *authorityID); err != nil {
+					return err
+				}
+				if err := tx.Delete(&systemModel.SysUserAuthority{}, "sys_user_id = ?", uid).Error; err != nil {
+					return err
+				}
+				if err := tx.Create(&systemModel.SysUserAuthority{
+					SysUserId: uint(uid), SysAuthorityAuthorityId: *authorityID,
+				}).Error; err != nil {
+					return err
+				}
+				if err := tx.Table("uni_memberships").Where("id = ?", mid).
+					Updates(map[string]interface{}{
+						"role": universityAccountRole(*authorityID), "session_cutoff": now.Unix(), "updated_at": now,
+					}).Error; err != nil {
+					return err
+				}
+				updates["authority_id"] = *authorityID
+			}
+		}
+		return tx.Table("sys_users").Where("id=?", uid).Updates(updates).Error
 	})
 }
+
 func (AdminService) Reset(tid, mid uint64, password string) error {
 	if err := utils.ValidateUniversityAccountPassword(password); err != nil {
 		return err

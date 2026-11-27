@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestDeleteAccountReleasesAdvisor(t *testing.T) {
+func TestDeletedAccountCanBeRecreatedWithSameUsername(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +35,7 @@ func TestDeleteAccountReleasesAdvisor(t *testing.T) {
 	for _, query := range []string{
 		"ALTER TABLE uni_memberships ADD COLUMN advisor_teacher_id INTEGER",
 		"ALTER TABLE uni_memberships ADD COLUMN session_cutoff INTEGER NOT NULL DEFAULT 0",
+		"CREATE UNIQUE INDEX uk_uni_sys_users_username ON sys_users (username)",
 		"CREATE UNIQUE INDEX advisor_link ON uni_memberships (tenant_id, advisor_teacher_id)",
 		"CREATE TABLE uni_teachers (id INTEGER PRIMARY KEY, tenant_id INTEGER, status INTEGER, teacher_no TEXT)",
 		"CREATE TABLE uni_tenants (id INTEGER PRIMARY KEY, status INTEGER)",
@@ -89,7 +90,55 @@ func TestDeleteAccountReleasesAdvisor(t *testing.T) {
 	if err := db.Model(&systemModel.SysUserAuthority{}).Where("sys_user_id = ?", userID).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("deleted account kept role assignments: %d, %v", count, err)
 	}
-	if _, err := service.CreateAccountWithAdvisor(1, "admin", "123456789012", "Admin", 2001, "T010"); err != nil {
-		t.Fatalf("deleted account kept advisor association: %v", err)
+	if _, err := service.CreateAccountWithAdvisor(1, "monitor", "123456", "Monitor", 2002, "T020"); !errors.Is(err, ErrAdvisorLink) {
+		t.Fatalf("recreation should reject a cross-tenant advisor: %v", err)
+	}
+	var oldUser systemModel.SysUser
+	if err := db.Unscoped().First(&oldUser, userID).Error; err != nil || oldUser.Username != "monitor" {
+		t.Fatalf("failed recreation changed the old account: %v", err)
+	}
+	newID, err := service.CreateAccountWithAdvisor(1, "monitor", "123456789012", "Monitor", 2002, "T010")
+	if err != nil || newID == userID {
+		t.Fatalf("recreation did not create a new account: %d, %v", newID, err)
+	}
+	var newUser systemModel.SysUser
+	if err := db.First(&newUser, newID).Error; err != nil || newUser.UUID == oldUser.UUID || !utils.BcryptCheck("123456789012", newUser.Password) {
+		t.Fatalf("recreated account has incorrect credentials or identity: %v", err)
+	}
+	var recreated universityModel.Membership
+	if err := db.Where("user_id = ?", newID).Take(&recreated).Error; err != nil {
+		t.Fatal(err)
+	}
+	invalidRole := uint(888)
+	if err := service.Edit(1, recreated.ID, "Monitor", "", "", nil, &invalidRole); !errors.Is(err, ErrInvalidAccountRole) {
+		t.Fatalf("edit accepted a platform role: %v", err)
+	}
+	for _, target := range []struct {
+		authority uint
+		role      string
+	}{{2001, "tenant_admin"}, {2002, "leave_monitor"}} {
+		if err := service.Edit(1, recreated.ID, "Updated", "", "", nil, &target.authority); err != nil {
+			t.Fatal(err)
+		}
+		var state struct {
+			Role             string
+			AdvisorTeacherID uint64
+			SessionCutoff    int64
+		}
+		if err := db.Table("uni_memberships").Where("id = ?", recreated.ID).Take(&state).Error; err != nil ||
+			state.Role != target.role || state.AdvisorTeacherID != 10 || state.SessionCutoff == 0 {
+			t.Fatalf("unexpected membership after switching to %d: %+v, %v", target.authority, state, err)
+		}
+		if err := db.First(&newUser, newID).Error; err != nil || newUser.AuthorityId != target.authority {
+			t.Fatalf("primary authority not updated: %v", err)
+		}
+		var authorities []systemModel.SysUserAuthority
+		if err := db.Where("sys_user_id = ?", newID).Find(&authorities).Error; err != nil ||
+			len(authorities) != 1 || authorities[0].SysAuthorityAuthorityId != target.authority {
+			t.Fatalf("unexpected authority assignments: %+v, %v", authorities, err)
+		}
+	}
+	if _, err := service.CreateAccount(2, "monitor", "123456", "Admin", 2001); !errors.Is(err, ErrUsernameTaken) {
+		t.Fatalf("active username can be reused: %v", err)
 	}
 }
