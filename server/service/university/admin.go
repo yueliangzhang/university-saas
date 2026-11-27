@@ -6,10 +6,12 @@ import (
 	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
+	systemModel "github.com/flipped-aurora/gin-vue-admin/server/model/system"
 	universityModel "github.com/flipped-aurora/gin-vue-admin/server/model/university"
 	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tenantAdminAuthorityID uint = 2001
@@ -17,8 +19,8 @@ const tenantAdminAuthorityID uint = 2001
 var (
 	ErrTenantNotActive = errors.New("高校不存在或已停用")
 	ErrUsernameTaken   = errors.New("用户名已存在")
-	ErrAdvisorLink     = errors.New("请选择本校有效且未关联其他管理员的教师工号")
-	ErrMemberNotFound  = errors.New("高校管理员成员不存在")
+	ErrAdvisorLink     = errors.New("请选择本校有效且未关联其他高校账号的教师工号")
+	ErrMemberNotFound  = errors.New("高校账号不存在")
 )
 
 type AdminService struct{}
@@ -43,7 +45,11 @@ type AdminListItem struct {
 func (AdminService) CreateAdmin(tenantID uint64, username, password, nickName string, contact ...string) (uint64, error) {
 	return (AdminService{}).CreateAccount(tenantID, username, password, nickName, 2001, contact...)
 }
-func (AdminService) CreateAccount(tenantID uint64, username, password, nickName string, authorityID uint, contact ...string) (uint64, error) {
+func (s AdminService) CreateAccount(tenantID uint64, username, password, nickName string, authorityID uint, contact ...string) (uint64, error) {
+	return s.CreateAccountWithAdvisor(tenantID, username, password, nickName, authorityID, "", contact...)
+}
+
+func (AdminService) CreateAccountWithAdvisor(tenantID uint64, username, password, nickName string, authorityID uint, advisorTeacherNo string, contact ...string) (uint64, error) {
 	if authorityID == 0 {
 		authorityID = 2001
 	}
@@ -118,9 +124,14 @@ func (AdminService) CreateAccount(tenantID uint64, username, password, nickName 
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&universityModel.Membership{
-			TenantID: tenantID, UserID: userID, Role: role, Status: 1,
-		}).Error
+		membership := universityModel.Membership{TenantID: tenantID, UserID: userID, Role: role, Status: 1}
+		if err := tx.Create(&membership).Error; err != nil {
+			return err
+		}
+		if strings.TrimSpace(advisorTeacherNo) != "" {
+			return setAccountAdvisor(tx, tenantID, membership.ID, advisorTeacherNo)
+		}
+		return nil
 	})
 	return userID, err
 }
@@ -169,8 +180,11 @@ func (AdminService) SetAdminStatus(tenantID, membershipID uint64, status int8) e
 func adminMutation(tid, mid uint64, fn func(*gorm.DB, uint64) error) error {
 	return global.GVA_DB.Transaction(func(tx *gorm.DB) error {
 		var row struct{ UserID uint64 }
-		if err := tx.Table("uni_memberships m").Select("m.user_id").Joins("JOIN sys_users u ON u.id=m.user_id AND u.deleted_at IS NULL").Where("m.id=? AND m.tenant_id=? AND ((m.role='tenant_admin' AND u.authority_id=2001) OR (m.role='leave_monitor' AND u.authority_id=2002)) AND u.id<>1", mid, tid).Take(&row).Error; err != nil {
-			return ErrMemberNotFound
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Table("uni_memberships m").Select("m.user_id").Joins("JOIN sys_users u ON u.id=m.user_id AND u.deleted_at IS NULL").Where("m.id=? AND m.tenant_id=? AND ((m.role='tenant_admin' AND u.authority_id=2001) OR (m.role='leave_monitor' AND u.authority_id=2002)) AND u.id<>1", mid, tid).Take(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrMemberNotFound
+			}
+			return err
 		}
 		var count int64
 		if err := tx.Table("uni_memberships").Where("user_id=?", row.UserID).Count(&count).Error; err != nil {
@@ -189,31 +203,8 @@ func (AdminService) Edit(tid, mid uint64, name, phone, email string, advisorTeac
 	}
 	return adminMutation(tid, mid, func(tx *gorm.DB, uid uint64) error {
 		if advisorTeacherNo != nil {
-			number := strings.TrimSpace(*advisorTeacherNo)
-			var teacherID any
-			if number != "" {
-				var teacher struct{ ID uint64 }
-				err := tx.Table("uni_teachers").Select("id").Where("tenant_id=? AND status=1 AND teacher_no=?", tid, number).Take(&teacher).Error
-				if errors.Is(err, gorm.ErrRecordNotFound) {
-					return ErrAdvisorLink
-				}
-				if err != nil {
-					return err
-				}
-				teacherID = teacher.ID
-			}
-			result := tx.Table("uni_memberships").Where("id=? AND tenant_id=? AND role='tenant_admin'", mid, tid).Update("advisor_teacher_id", teacherID)
-			if result.Error != nil {
-				return ErrAdvisorLink
-			}
-			if result.RowsAffected == 0 {
-				var count int64
-				if err := tx.Table("uni_memberships").Where("id=? AND tenant_id=? AND role='tenant_admin'", mid, tid).Count(&count).Error; err != nil {
-					return err
-				}
-				if count == 0 {
-					return ErrAdvisorLink
-				}
+			if err := setAccountAdvisor(tx, tid, mid, *advisorTeacherNo); err != nil {
+				return err
 			}
 		}
 		return tx.Table("sys_users").Where("id=?", uid).Updates(map[string]interface{}{"nick_name": name, "phone": phone, "email": email, "updated_at": time.Now()}).Error
@@ -228,5 +219,39 @@ func (AdminService) Reset(tid, mid uint64, password string) error {
 			return err
 		}
 		return tx.Table("uni_memberships").Where("id=?", mid).Update("session_cutoff", time.Now().Unix()).Error
+	})
+}
+
+func setAccountAdvisor(tx *gorm.DB, tenantID, membershipID uint64, teacherNo string) error {
+	var teacherID *uint64
+	if number := strings.TrimSpace(teacherNo); number != "" {
+		var teacher struct{ ID uint64 }
+		err := tx.Table("uni_teachers").Select("id").
+			Where("tenant_id=? AND status=1 AND teacher_no=?", tenantID, number).Take(&teacher).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrAdvisorLink
+		}
+		if err != nil {
+			return err
+		}
+		teacherID = &teacher.ID
+	}
+	err := tx.Table("uni_memberships").Where("id=? AND tenant_id=?", membershipID, tenantID).
+		Update("advisor_teacher_id", teacherID).Error
+	if isDuplicateKey(err) || errors.Is(err, gorm.ErrDuplicatedKey) {
+		return ErrAdvisorLink
+	}
+	return err
+}
+
+func (AdminService) DeleteAccount(tenantID, membershipID uint64) error {
+	return adminMutation(tenantID, membershipID, func(tx *gorm.DB, userID uint64) error {
+		if err := tx.Delete(&universityModel.Membership{}, "id = ? AND tenant_id = ?", membershipID, tenantID).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&systemModel.SysUserAuthority{}, "sys_user_id = ?", userID).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&systemModel.SysUser{}, "id = ?", userID).Error
 	})
 }

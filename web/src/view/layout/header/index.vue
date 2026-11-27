@@ -119,7 +119,7 @@
     () => [userStore.userInfo.ID, userStore.userInfo.authorityId],
     async ([userID, authorityID], _, onCleanup) => {
       advisorAvailable.value = false
-      if (!userID || authorityID !== 2001) return
+      if (!userID || ![2001, 2002].includes(authorityID)) return
       let current = true
       onCleanup(() => { current = false })
       try {

@@ -7,6 +7,8 @@
 
 ## Done
 
+- [高校账号删除与请假监管员切换辅导员](done/university-account-management.md)
+
 - [V17.8.4 系统性能优化](done/university-performance-v17.8.4.md)
 
 - [V17.8.3 数据统计与报表中心](done/university-reports-v17.8.3.md)

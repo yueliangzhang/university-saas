@@ -14,4 +14,5 @@ func InitAdminRouter(privateGroup *gin.RouterGroup) {
 	group.PUT("status", api.SetStatus)
 	group.PUT("edit", api.Edit)
 	group.PUT("password", api.Reset)
+	group.DELETE("delete", api.Delete)
 }

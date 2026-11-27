@@ -25,6 +25,14 @@ type tenantMembershipRow struct {
 // TenantAuth validates current membership on every request.
 // This version intentionally requires one active tenant membership.
 func TenantAuth() gin.HandlerFunc {
+	return tenantAccountAuth(false)
+}
+
+func AdvisorTenantAuth() gin.HandlerFunc {
+	return tenantAccountAuth(true)
+}
+
+func tenantAccountAuth(allowMonitor bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := utils.GetUserID(c)
 
@@ -70,17 +78,20 @@ func TenantAuth() gin.HandlerFunc {
 		}
 
 		member := memberships[0]
+		validRole := member.Role == "tenant_admin" && member.AuthorityID == 2001
+		if allowMonitor && member.Role == "leave_monitor" && member.AuthorityID == 2002 {
+			validRole = true
+		}
 
 		if member.MemberStatus != 1 ||
 			member.TenantStatus != 1 ||
 			member.UserEnable != 1 ||
-			member.Role != "tenant_admin" ||
-			member.AuthorityID != 2001 ||
+			!validRole ||
 			uint64(utils.GetUserAuthorityId(c)) != member.AuthorityID {
 
 			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
 				"code": 7,
-				"msg":  "高校管理员权限不足或已停用",
+				"msg":  "高校账号权限不足或已停用",
 			})
 			return
 		}

@@ -1,4 +1,14 @@
 definitions:
+  university.deleteAdminRequest:
+    properties:
+      membershipId:
+        type: integer
+      tenantId:
+        type: integer
+    required:
+    - membershipId
+    - tenantId
+    type: object
   common.JSONMap:
     additionalProperties: true
     type: object
@@ -1352,6 +1362,29 @@ definitions:
   response.PolicyPathResponse:
     properties:
       paths:
+  /uni/admin/delete:
+    delete:
+      consumes:
+      - application/json
+      parameters:
+      - description: 高校 ID 与成员 ID
+        in: body
+        name: data
+        required: true
+        schema:
+          $ref: '#/definitions/university.deleteAdminRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/response.Response'
+      security:
+      - ApiKeyAuth: []
+      summary: 删除高校账号
+      tags:
+      - UniversityAdmin
         items:
           $ref: '#/definitions/request.CasbinInfo'
         type: array

@@ -17,7 +17,7 @@ func advisorWorkspaceTeacher(c *gin.Context) (uint64, error) {
 	err := global.GVA_DB.WithContext(c.Request.Context()).Table("uni_memberships m").
 		Select("t.id").
 		Joins("JOIN uni_teachers t ON t.tenant_id=m.tenant_id AND t.id=m.advisor_teacher_id AND t.status=1").
-		Where("m.tenant_id=? AND m.user_id=? AND m.role='tenant_admin' AND m.status=1", tenantID, utils.GetUserID(c)).
+		Where("m.tenant_id=? AND m.user_id=? AND m.role=? AND m.status=1", tenantID, utils.GetUserID(c), c.GetString(middleware.TenantRoleContextKey)).
 		Take(&teacher).Error
 	return teacher.ID, err
 }
@@ -50,7 +50,7 @@ func advisorWorkspaceAuth(c *gin.Context) {
 }
 
 func InitAdvisorWorkspaceRouter(privateGroup *gin.RouterGroup) {
-	group := privateGroup.Group("uni/advisor-workspace", middleware.TenantAuth())
+	group := privateGroup.Group("uni/advisor-workspace", middleware.AdvisorTenantAuth())
 	group.GET("/status", advisorWorkspaceStatus)
 	workspace := group.Group("", advisorWorkspaceAuth)
 	workspace.GET("/me", teacherPortalMe)

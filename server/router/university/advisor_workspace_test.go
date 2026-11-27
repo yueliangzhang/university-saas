@@ -48,7 +48,7 @@ func TestAdvisorWorkspaceRequiresLinkedActiveTeacher(t *testing.T) {
 		"CREATE TABLE uni_students (id INTEGER PRIMARY KEY, tenant_id INTEGER, class_id INTEGER, advisor_id INTEGER, name TEXT, student_no TEXT)",
 		"INSERT INTO sys_users VALUES (7, 1, 2001, NULL), (8, 1, 2002, NULL)",
 		"INSERT INTO uni_tenants VALUES (1, 1), (2, 1)",
-		"INSERT INTO uni_memberships VALUES (1, 7, 1, 'tenant_admin', 10), (1, 8, 1, 'leave_monitor', 10)",
+		"INSERT INTO uni_memberships VALUES (1, 7, 1, 'tenant_admin', 10), (1, 8, 1, 'leave_monitor', 11)",
 		"INSERT INTO uni_teachers VALUES (10, 1, 1), (11, 1, 1), (20, 2, 1)",
 		"INSERT INTO uni_classes VALUES (1, 1, 'Assigned', 'A'), (2, 1, 'OtherAdvisor', 'B'), (3, 2, 'OtherSchool', 'C')",
 		"INSERT INTO uni_students VALUES (101,1,1,10,'Assigned Student','A001'),(102,1,2,11,'Other Student','B001'),(103,2,3,20,'Other School Student','C001')",
@@ -111,6 +111,14 @@ func TestAdvisorWorkspaceRequiresLinkedActiveTeacher(t *testing.T) {
 	export := get("leaves?format=xlsx&status=approved&keyword=A001", http.StatusOK)
 	if !strings.HasPrefix(export, "PK") {
 		t.Fatal("export did not return an XLSX archive")
+	}
+	if body := get("classes?monitor=true", http.StatusOK); !strings.Contains(body, "OtherAdvisor") ||
+		strings.Contains(body, "Assigned") || strings.Contains(body, "OtherSchool") {
+		t.Fatalf("unexpected monitor class scope: %s", body)
+	}
+	exec("UPDATE uni_memberships SET advisor_teacher_id=NULL WHERE user_id=8")
+	if body := get("status?monitor=true", http.StatusOK); !strings.Contains(body, `"available":false`) {
+		t.Fatalf("unexpected monitor advisor availability: %s", body)
 	}
 	get("classes?monitor=true", http.StatusForbidden)
 	for _, teacherID := range []string{"NULL", "20", "10"} {

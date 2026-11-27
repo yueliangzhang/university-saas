@@ -14,13 +14,14 @@ type AdminApi struct{}
 var adminService = new(universityService.AdminService)
 
 type createAdminRequest struct {
-	TenantID    uint64 `json:"tenantId" binding:"required"`
-	Username    string `json:"username" binding:"required"`
-	Password    string `json:"password" binding:"required"`
-	NickName    string `json:"nickName"`
-	AuthorityID uint   `json:"authorityId"`
-	Phone       string `json:"phone"`
-	Email       string `json:"email"`
+	TenantID         uint64 `json:"tenantId" binding:"required"`
+	Username         string `json:"username" binding:"required"`
+	Password         string `json:"password" binding:"required"`
+	NickName         string `json:"nickName"`
+	AuthorityID      uint   `json:"authorityId"`
+	Phone            string `json:"phone"`
+	Email            string `json:"email"`
+	AdvisorTeacherNo string `json:"advisorTeacherNo"`
 }
 
 type listAdminRequest struct {
@@ -46,9 +47,9 @@ func (AdminApi) Create(c *gin.Context) {
 		response.FailWithMessage("用户名不能为空", c)
 		return
 	}
-	id, err := adminService.CreateAccount(r.TenantID, r.Username, r.Password, r.NickName, r.AuthorityID, r.Phone, r.Email)
+	id, err := adminService.CreateAccountWithAdvisor(r.TenantID, r.Username, r.Password, r.NickName, r.AuthorityID, r.AdvisorTeacherNo, r.Phone, r.Email)
 	if err != nil {
-		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) {
+		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) || errors.Is(err, universityService.ErrAdvisorLink) {
 			response.FailWithMessage(err.Error(), c)
 		} else {
 			response.FailWithMessage("创建管理员失败，请检查参数或服务日志", c)
@@ -126,4 +127,35 @@ func (AdminApi) Reset(c *gin.Context) {
 		return
 	}
 	response.OkWithMessage("重置成功", c)
+}
+
+type deleteAdminRequest struct {
+	TenantID     uint64 `json:"tenantId" binding:"required"`
+	MembershipID uint64 `json:"membershipId" binding:"required"`
+}
+
+// Delete 删除高校账号
+// @Tags UniversityAdmin
+// @Summary 删除高校账号
+// @Security ApiKeyAuth
+// @Accept json
+// @Produce json
+// @Param data body deleteAdminRequest true "高校 ID 与成员 ID"
+// @Success 200 {object} response.Response
+// @Router /uni/admin/delete [delete]
+func (AdminApi) Delete(c *gin.Context) {
+	var r deleteAdminRequest
+	if c.ShouldBindJSON(&r) != nil {
+		response.FailWithMessage("请求参数不合法", c)
+		return
+	}
+	if err := adminService.DeleteAccount(r.TenantID, r.MembershipID); err != nil {
+		if errors.Is(err, universityService.ErrMemberNotFound) {
+			response.FailWithMessage(err.Error(), c)
+		} else {
+			response.FailWithMessage("删除高校账号失败", c)
+		}
+		return
+	}
+	response.OkWithMessage("账号已删除", c)
 }

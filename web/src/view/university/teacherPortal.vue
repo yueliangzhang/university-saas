@@ -3,7 +3,7 @@
     <div v-if="token" class="topbar">
       <div class="brand">{{ advisorMode ? '辅导员工作台' : '🎓 高校教师服务平台' }}</div>
       <div>
-        <el-button v-if="advisorMode" plain @click="backToAdmin">切换为高校管理员</el-button>
+        <el-button v-if="advisorMode" plain @click="returnToWorkspace">{{ userStore.userInfo.authorityId === 2002 ? '切换为请假监管员' : '切换为高校管理员' }}</el-button>
         <el-button plain @click="logout">退出登录</el-button>
       </div>
     </div>
@@ -262,13 +262,13 @@ const refresh = async () => {
     await Promise.all([loadLeaves(true), loadStudents()])
   } catch (e) {
     ElMessage.error(error(e))
-    if (props.advisorMode && e.response?.status === 403) await backToAdmin()
+    if (props.advisorMode && e.response?.status === 403) await returnToWorkspace()
     else if (!props.advisorMode && e.response?.status === 401) clear()
   } finally {
     refreshing.value = false
   }
 }
-const backToAdmin = () => router.replace({ name: 'Login' })
+const returnToWorkspace = () => router.replace({ name: 'Login' })
 const logout=async()=>{if(props.advisorMode)return userStore.LoginOut();try{await call('/logout','post',{})}catch(e){}finally{clear()}}
 const downloadProof = async (row, index) => {
   try {
