@@ -7,6 +7,8 @@
 
 ## Done
 
+- [高校账号密码长度](done/university-account-password-length.md)
+
 - [高校账号删除与请假监管员切换辅导员](done/university-account-management.md)
 
 - [V17.8.4 系统性能优化](done/university-performance-v17.8.4.md)

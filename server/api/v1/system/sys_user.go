@@ -1,6 +1,7 @@
 package system
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -242,6 +243,10 @@ func (b *BaseApi) ChangePassword(c *gin.Context) {
 	uid := utils.GetUserID(c)
 	u := &system.SysUser{GVA_MODEL: global.GVA_MODEL{ID: uid}, Password: req.Password}
 	err = userService.ChangePassword(u, req.NewPassword)
+	if errors.Is(err, utils.ErrUniversityAccountPasswordLength) {
+		response.FailWithMessage(err.Error(), c)
+		return
+	}
 	if err != nil {
 		global.GVA_LOG.Error("修改失败!", zap.Error(err))
 		response.FailWithMessage("修改失败，原密码与当前账户不符", c)

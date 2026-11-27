@@ -61,8 +61,11 @@ func (AdminService) CreateAccountWithAdvisor(tenantID uint64, username, password
 	}
 	username = strings.TrimSpace(username)
 	nickName = strings.TrimSpace(nickName)
-	if tenantID == 0 || username == "" || len(username) > 191 || len(password) < 12 || len(password) > 72 || len(nickName) > 191 {
-		return 0, errors.New("参数不合法：密码须为12至72字节")
+	if tenantID == 0 || username == "" || len(username) > 191 || len(nickName) > 191 {
+		return 0, errors.New("账号参数不合法")
+	}
+	if err := utils.ValidateUniversityAccountPassword(password); err != nil {
+		return 0, err
 	}
 	phone, email := "", ""
 	if len(contact) == 2 {
@@ -211,8 +214,8 @@ func (AdminService) Edit(tid, mid uint64, name, phone, email string, advisorTeac
 	})
 }
 func (AdminService) Reset(tid, mid uint64, password string) error {
-	if len(password) < 12 || len(password) > 72 {
-		return errors.New("密码须为12至72字节")
+	if err := utils.ValidateUniversityAccountPassword(password); err != nil {
+		return err
 	}
 	return adminMutation(tid, mid, func(tx *gorm.DB, uid uint64) error {
 		if err := tx.Table("sys_users").Where("id=?", uid).Updates(map[string]interface{}{"password": utils.BcryptHash(password), "updated_at": time.Now()}).Error; err != nil {

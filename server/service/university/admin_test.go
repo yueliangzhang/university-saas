@@ -7,6 +7,7 @@ import (
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
 	systemModel "github.com/flipped-aurora/gin-vue-admin/server/model/system"
 	universityModel "github.com/flipped-aurora/gin-vue-admin/server/model/university"
+	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
@@ -33,6 +34,7 @@ func TestDeleteAccountReleasesAdvisor(t *testing.T) {
 	}
 	for _, query := range []string{
 		"ALTER TABLE uni_memberships ADD COLUMN advisor_teacher_id INTEGER",
+		"ALTER TABLE uni_memberships ADD COLUMN session_cutoff INTEGER NOT NULL DEFAULT 0",
 		"CREATE UNIQUE INDEX advisor_link ON uni_memberships (tenant_id, advisor_teacher_id)",
 		"CREATE TABLE uni_teachers (id INTEGER PRIMARY KEY, tenant_id INTEGER, status INTEGER, teacher_no TEXT)",
 		"CREATE TABLE uni_tenants (id INTEGER PRIMARY KEY, status INTEGER)",
@@ -47,7 +49,12 @@ func TestDeleteAccountReleasesAdvisor(t *testing.T) {
 	}
 
 	service := AdminService{}
-	_, err = service.CreateAccountWithAdvisor(1, "bad-link", "test-password", "Monitor", 2002, "T020")
+	for _, password := range []string{"12345", "1234567890123"} {
+		if _, err := service.CreateAccount(1, "invalid-length", password, "Monitor", 2002); !errors.Is(err, utils.ErrUniversityAccountPasswordLength) {
+			t.Fatalf("create accepted invalid password length: %v", err)
+		}
+	}
+	_, err = service.CreateAccountWithAdvisor(1, "bad-link", "123456", "Monitor", 2002, "T020")
 	if !errors.Is(err, ErrAdvisorLink) {
 		t.Fatalf("cross-tenant association: %v", err)
 	}
@@ -56,13 +63,19 @@ func TestDeleteAccountReleasesAdvisor(t *testing.T) {
 		t.Fatalf("failed creation left a user: %d, %v", count, err)
 	}
 
-	userID, err := service.CreateAccountWithAdvisor(1, "monitor", "test-password", "Monitor", 2002, "T010")
+	userID, err := service.CreateAccountWithAdvisor(1, "monitor", "密码校验六位", "Monitor", 2002, "T010")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var membership universityModel.Membership
 	if err := db.Where("user_id = ?", userID).Take(&membership).Error; err != nil {
 		t.Fatal(err)
+	}
+	if err := service.Reset(1, membership.ID, "123456"); err != nil {
+		t.Fatalf("reset rejected six-character password: %v", err)
+	}
+	if err := service.Reset(1, membership.ID, "1234567890123"); !errors.Is(err, utils.ErrUniversityAccountPasswordLength) {
+		t.Fatalf("reset accepted thirteen-character password: %v", err)
 	}
 	if err := service.DeleteAccount(2, membership.ID); !errors.Is(err, ErrMemberNotFound) {
 		t.Fatalf("cross-tenant deletion: %v", err)
@@ -76,7 +89,7 @@ func TestDeleteAccountReleasesAdvisor(t *testing.T) {
 	if err := db.Model(&systemModel.SysUserAuthority{}).Where("sys_user_id = ?", userID).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("deleted account kept role assignments: %d, %v", count, err)
 	}
-	if _, err := service.CreateAccountWithAdvisor(1, "admin", "test-password", "Admin", 2001, "T010"); err != nil {
+	if _, err := service.CreateAccountWithAdvisor(1, "admin", "123456789012", "Admin", 2001, "T010"); err != nil {
 		t.Fatalf("deleted account kept advisor association: %v", err)
 	}
 }

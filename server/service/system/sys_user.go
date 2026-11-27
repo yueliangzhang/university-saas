@@ -26,6 +26,11 @@ type UserService struct{}
 var UserServiceApp = new(UserService)
 
 func (userService *UserService) Register(u system.SysUser) (userInter system.SysUser, err error) {
+	if u.AuthorityId == 2001 || u.AuthorityId == 2002 {
+		if err := utils.ValidateUniversityAccountPassword(u.Password); err != nil {
+			return userInter, err
+		}
+	}
 	var user system.SysUser
 	if !errors.Is(global.GVA_DB.Where("username = ?", u.Username).First(&user).Error, gorm.ErrRecordNotFound) { // 判断用户名是否注册
 		return userInter, errors.New("用户名已注册")
@@ -124,12 +129,17 @@ func (userService *UserService) FindUniversityLoginUser(username, password, code
 
 func (userService *UserService) ChangePassword(u *system.SysUser, newPassword string) (err error) {
 	var user system.SysUser
-	err = global.GVA_DB.Select("id, password").Where("id = ?", u.ID).First(&user).Error
+	err = global.GVA_DB.Select("id, password, authority_id").Where("id = ?", u.ID).First(&user).Error
 	if err != nil {
 		return err
 	}
 	if ok := utils.BcryptCheck(u.Password, user.Password); !ok {
 		return errors.New("原密码错误")
+	}
+	if user.AuthorityId == 2001 || user.AuthorityId == 2002 {
+		if err := utils.ValidateUniversityAccountPassword(newPassword); err != nil {
+			return err
+		}
 	}
 	pwd := utils.BcryptHash(newPassword)
 	err = global.GVA_DB.Model(&user).Update("password", pwd).Error
@@ -387,6 +397,16 @@ func (userService *UserService) FindUserByUuid(uuid string) (user *system.SysUse
 //@return: err error
 
 func (userService *UserService) ResetPassword(ID uint, password string) (err error) {
-	err = global.GVA_DB.Model(&system.SysUser{}).Where("id = ?", ID).Update("password", utils.BcryptHash(password)).Error
+	q := global.GVA_DB.Model(&system.SysUser{}).Where("id = ?", ID)
+	if validationErr := utils.ValidateUniversityAccountPassword(password); validationErr != nil {
+		var count int64
+		if err := q.Session(&gorm.Session{}).Where("authority_id IN ?", []uint{2001, 2002}).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return validationErr
+		}
+	}
+	err = q.Update("password", utils.BcryptHash(password)).Error
 	return err
 }

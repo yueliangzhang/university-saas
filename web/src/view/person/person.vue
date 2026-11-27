@@ -255,7 +255,7 @@
           <el-input v-model="pwdModify.password" show-password />
         </el-form-item>
         <el-form-item :minlength="6" label="新密码" prop="newPassword">
-          <el-input v-model="pwdModify.newPassword" show-password />
+          <el-input v-model="pwdModify.newPassword" :placeholder="isUniversityAccount ? '6至12个字符' : ''" show-password />
         </el-form-item>
         <el-form-item :minlength="6" label="确认密码" prop="confirmPassword">
           <el-input v-model="pwdModify.confirmPassword" show-password />
@@ -385,7 +385,17 @@
     ],
     newPassword: [
       { required: true, message: '请输入新密码', trigger: 'blur' },
-      { min: 6, message: '最少6个字符', trigger: 'blur' }
+      {
+        validator: (_, value, callback) => {
+          const length = [...(value || '')].length
+          if (isUniversityAccount.value && (length < 6 || length > 12)) {
+            return callback(new Error('密码须为6至12个字符'))
+          }
+          if (length < 6) return callback(new Error('最少6个字符'))
+          callback()
+        },
+        trigger: 'blur'
+      }
     ],
     confirmPassword: [
       { required: true, message: '请输入确认密码', trigger: 'blur' },

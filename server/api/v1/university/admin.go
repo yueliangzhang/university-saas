@@ -6,6 +6,7 @@ import (
 
 	"github.com/flipped-aurora/gin-vue-admin/server/model/common/response"
 	universityService "github.com/flipped-aurora/gin-vue-admin/server/service/university"
+	"github.com/flipped-aurora/gin-vue-admin/server/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -49,7 +50,7 @@ func (AdminApi) Create(c *gin.Context) {
 	}
 	id, err := adminService.CreateAccountWithAdvisor(r.TenantID, r.Username, r.Password, r.NickName, r.AuthorityID, r.AdvisorTeacherNo, r.Phone, r.Email)
 	if err != nil {
-		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) || errors.Is(err, universityService.ErrAdvisorLink) {
+		if errors.Is(err, universityService.ErrUsernameTaken) || errors.Is(err, universityService.ErrTenantNotActive) || errors.Is(err, universityService.ErrAdvisorLink) || errors.Is(err, utils.ErrUniversityAccountPasswordLength) {
 			response.FailWithMessage(err.Error(), c)
 		} else {
 			response.FailWithMessage("创建管理员失败，请检查参数或服务日志", c)
@@ -122,8 +123,12 @@ func (AdminApi) Reset(c *gin.Context) {
 		response.FailWithMessage("参数不合法", c)
 		return
 	}
-	if adminService.Reset(r.TenantID, r.MembershipID, r.Password) != nil {
-		response.FailWithMessage("重置失败，密码须为12至72字节", c)
+	if err := adminService.Reset(r.TenantID, r.MembershipID, r.Password); err != nil {
+		if errors.Is(err, utils.ErrUniversityAccountPasswordLength) || errors.Is(err, universityService.ErrMemberNotFound) {
+			response.FailWithMessage(err.Error(), c)
+		} else {
+			response.FailWithMessage("重置密码失败", c)
+		}
 		return
 	}
 	response.OkWithMessage("重置成功", c)
