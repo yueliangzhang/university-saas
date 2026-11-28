@@ -97,7 +97,7 @@
   </div>
 
     </div>
-    <TeacherAccountPanel v-if="uniTeacherTab!=='profiles'" :mode="uniTeacherTab" />
+    <TeacherAccountPanel v-if="uniTeacherTab!=='profiles'" :mode="uniTeacherTab" :colleges="colleges" />
   </div>
 </template>
 <script setup>

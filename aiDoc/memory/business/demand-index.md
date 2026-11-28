@@ -7,6 +7,8 @@
 
 ## Done
 
+- [教师账号与辅导员分配搜索](done/university-teacher-tabs-search.md)
+
 - [请假站内通知](done/university-leave-notifications.md)
 
 - [高校账号密码长度](done/university-account-password-length.md)
