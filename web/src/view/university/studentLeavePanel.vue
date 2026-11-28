@@ -9,7 +9,7 @@
         <el-form-item><el-button type="primary" @click="search">查询</el-button><el-button @click="reset">重置</el-button><el-button type="primary" @click="openCreate">新增请假</el-button></el-form-item>
       </el-form>
       <el-table max-height="620" v-loading="loading" :data="rows" border>
-        <el-table-column label="学生" min-width="150"><template #default="{row}">{{ studentName(row.studentId) }}</template></el-table-column>
+        <el-table-column label="学生" min-width="150"><template #default="{row}">{{ studentLabel(row.studentId, row.studentName, row.studentNo) }}</template></el-table-column>
         <el-table-column label="类型" width="95"><template #default="{row}">{{ typeNames[row.leaveType]||row.leaveType }}</template></el-table-column>
         <el-table-column prop="reason" label="请假原因" min-width="200" show-overflow-tooltip />
         <el-table-column prop="startAt" label="开始时间" min-width="175"><template #default="{row}">{{ fmt(row.startAt) }}</template></el-table-column>
@@ -22,7 +22,7 @@
     </el-card>
     <el-dialog v-model="dialog" :title="editing?'编辑请假':'新增请假'" width="600px">
       <el-form :model="form" label-width="95px">
-        <el-form-item label="学生" required><el-select v-model="form.studentId" filterable placeholder="选择在读学生" style="width:100%"><el-option v-for="s in activeStudents" :key="s.id" :label="`${s.name} (${s.studentNo})`" :value="s.id" /></el-select></el-form-item>
+        <el-form-item label="学生" required><el-select v-model="form.studentId" filterable remote :remote-method="searchStudents" :loading="studentsLoading" placeholder="搜索学生姓名或学号" style="width:100%"><el-option v-for="s in studentOptions" :key="s.id" :label="studentLabel(s.id, s.name, s.studentNo)" :value="s.id" /></el-select></el-form-item>
         <el-form-item label="请假类型" required><el-select v-model="form.leaveType" style="width:100%"><el-option v-for="(name,key) in typeNames" :key="key" :label="name" :value="key" /></el-select></el-form-item>
         <el-form-item label="开始时间" required><el-date-picker v-model="form.startAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" /></el-form-item>
         <el-form-item label="结束时间" required><el-date-picker v-model="form.endAt" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width:100%" /></el-form-item>
@@ -35,27 +35,27 @@
   </section>
 </template>
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '@/utils/request'
+import { useLeaveStudentSearch } from './useLeaveStudentSearch'
 const typeNames={sick:'病假',personal:'事假',other:'其他'}
 const statusNames={pending:'待审批',approved:'已通过',rejected:'已驳回',cancelled:'已撤销'}
-const rows=ref([]),students=ref([]),keyword=ref(''),status=ref(''),page=ref(1),pageSize=ref(20),total=ref(0)
+const rows=ref([]),keyword=ref(''),status=ref(''),page=ref(1),pageSize=ref(20),total=ref(0)
 const loading=ref(false),saving=ref(false),dialog=ref(false),editing=ref(false),form=ref({})
-const activeStudents=computed(()=>students.value.filter(x=>x.status===1))
-const studentName=id=>{const s=students.value.find(x=>x.id===id);return s?`${s.name} (${s.studentNo})`:`学生 #${id}`}
+const { options: studentOptions, loading: studentsLoading, search: searchStudents, open: openStudentSearch } = useLeaveStudentSearch(dialog, form)
+const studentLabel = (id, name, studentNo) => name ? `${name} (${studentNo})` : `学生 #${id}`
 const fmt=v=>v?String(v).replace('T',' ').slice(0,19):''
 const api=(method='get',data,params,url='/uni/leaves')=>request({url,method,data,params})
 const load=async()=>{loading.value=true;try{const r=await api('get',undefined,{page:page.value,pageSize:pageSize.value,keyword:keyword.value,status:status.value||undefined});if(r?.code!==0)throw Error(r?.msg||'加载失败');rows.value=r.data?.list||[];total.value=r.data?.total||0}catch(e){ElMessage.error(e.message||'加载失败')}finally{loading.value=false}}
-const loadStudents=async()=>{try{let p=1,all=[];while(p<=100){const r=await request({url:'/uni/students',method:'get',params:{page:p,pageSize:100}});if(r?.code!==0)throw Error(r?.msg||'学生列表加载失败');const chunk=r.data?.list||[];all.push(...chunk);if(all.length>=(r.data?.total||0)||chunk.length===0)break;p++}students.value=all}catch(e){ElMessage.error(e.message||'学生列表加载失败')}}
 const search=()=>{page.value=1;load()}
 const reset=()=>{keyword.value='';status.value='';search()}
-const openCreate=()=>{editing.value=false;form.value={studentId:null,leaveType:'personal',reason:'',startAt:'',endAt:''};dialog.value=true}
-const openEdit=row=>{editing.value=true;form.value={id:row.id,studentId:row.studentId,leaveType:row.leaveType,reason:row.reason,startAt:fmt(row.startAt),endAt:fmt(row.endAt)};dialog.value=true}
+const openCreate=()=>{editing.value=false;form.value={studentId:null,leaveType:'personal',reason:'',startAt:'',endAt:''};dialog.value=true;openStudentSearch()}
+const openEdit=row=>{editing.value=true;form.value={id:row.id,studentId:row.studentId,leaveType:row.leaveType,reason:row.reason,startAt:fmt(row.startAt),endAt:fmt(row.endAt)};dialog.value=true;openStudentSearch(row)}
 const save=async()=>{const f=form.value;if(!f.studentId||!f.reason?.trim()||!f.startAt||!f.endAt||f.endAt<=f.startAt){ElMessage.warning('请填写完整信息，结束时间必须晚于开始时间');return}saving.value=true;try{const r=await api(editing.value?'put':'post',f);if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('保存成功');dialog.value=false;await load()}catch(e){ElMessage.error(e.message||'保存失败')}finally{saving.value=false}}
 const review=async(row,action)=>{try{let note='';if(action==='rejected'){const result=await ElMessageBox.prompt('请输入驳回原因','驳回请假',{inputValidator:v=>!!v?.trim()&&v.length<=1000||'请填写1000字以内的原因'});note=result.value}else{await ElMessageBox.confirm('确认通过该请假申请？','审批确认')}const r=await api('post',{id:row.id,action,note},undefined,'/uni/leaves/review');if(r?.code!==0)throw Error(r?.msg||'审批失败');ElMessage.success('审批完成');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||'审批失败')}}
 const cancel=async row=>{try{await ElMessageBox.confirm('确认撤销该待审批申请？','撤销确认');const r=await api('post',{id:row.id},undefined,'/uni/leaves/cancel');if(r?.code!==0)throw Error(r?.msg||'撤销失败');ElMessage.success('已撤销');await load()}catch(e){if(e!=='cancel'&&e!=='close')ElMessage.error(e.message||'撤销失败')}}
-onMounted(async()=>{await loadStudents();await load()})
+onMounted(load)
 </script>
 
 <style scoped>

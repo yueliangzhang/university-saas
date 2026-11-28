@@ -9,3 +9,5 @@
 现有 `DELETE /uni/students`、`DELETE /uni/teachers`、`DELETE /uni/org/classes` 接受 `ids` 查询参数，例如 `?ids=1,2,3`。每批最多 100 个互异的正整数 ID。单条删除继续传 `id`。批量删除在当前高校内执行，任一记录不存在或有关联限制时整批回滚。
 
 `GET /uni/student-accounts` supports `keyword` (student name or number), `status` (`0` not opened, `1` active, `2` disabled), and `sortBy` (`studentNo`, `name`, `status`, `lastLoginAt`) with `sortOrder=asc|desc`. Filtering and sorting are applied before pagination.
+
+高校后台 `GET /uni/leaves` 的列表项包含 `studentName` 和 `studentNo`。新增或编辑请假时，学生选择器通过 `GET /uni/students` 按姓名或学号分页检索在读学生。

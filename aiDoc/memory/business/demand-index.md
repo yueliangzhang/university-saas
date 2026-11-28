@@ -7,6 +7,8 @@
 
 ## Done
 
+- [学生管理与请假审批加载优化](done/university-student-leave-load-performance.md)
+
 - [教师账号与辅导员分配搜索](done/university-teacher-tabs-search.md)
 
 - [请假站内通知](done/university-leave-notifications.md)

@@ -211,7 +211,7 @@ const types={personal:'事假',sick:'病假',other:'其他'},statuses={pending:'
 const fmt=s=>s?String(s).replace('T',' ').slice(0,16):''
 const error=e=>e.response?.data?.msg||e.message||'操作失败'
 const call = async (url, method = 'get', data, params) => {
-  const config = { url: portalBase.value + url, method, data, params, donNotShowLoading: url === '/notifications' }
+  const config = { url: portalBase.value + url, method, data, params, donNotShowLoading: method === 'get' }
   if (props.advisorMode) {
     const result = await request(config)
     if (result.code !== 0) throw new Error(result.msg || '请求失败')
@@ -241,8 +241,8 @@ const loadLeaves = async (includeSummary = false) => {
     const data = await call('/leaves', 'get', undefined, {
       page: page.value, pageSize: 10, ...leaveFilters.value, includeSummary: includeSummary === true
     })
-    if (data.summary) summary.value = data.summary
     if (version !== leaveVersion) return
+    if (data.summary) summary.value = data.summary
     rows.value = data.list || []
     total.value = data.total
     const lastPage = Math.max(1, Math.ceil(total.value / 10))
@@ -261,17 +261,24 @@ const refresh = async () => {
     mustChange.value = Boolean(profile.mustChangePassword)
     if (mustChange.value) return
     me.value = profile
-    const data = await call('/classes')
-    classes.value = data.list || []
-    if (!classes.value.some(cl => String(cl.id) === selectedClassId.value)) {
-      selectedClassId.value = ''
-      delete leaveFilters.value.classId
-    }
-    if (!classes.value.some(cl => cl.id === studentClass.value)) {
-      studentClass.value = null
-      delete studentFilters.value.classId
-    }
-    await Promise.all([loadLeaves(true), loadStudents()])
+    const refreshClasses = call('/classes').then(data => {
+      classes.value = data.list || []
+      if (!classes.value.some(cl => String(cl.id) === selectedClassId.value)) {
+        selectedClassId.value = ''
+        delete leaveFilters.value.classId
+      }
+      if (!classes.value.some(cl => cl.id === studentClass.value)) {
+        studentClass.value = null
+        delete studentFilters.value.classId
+      }
+    })
+    const leavesReady = leaveFilters.value.classId
+      ? refreshClasses.then(() => loadLeaves(true))
+      : loadLeaves(true)
+    const studentsReady = studentFilters.value.classId
+      ? refreshClasses.then(() => loadStudents())
+      : loadStudents()
+    await Promise.all([refreshClasses, leavesReady, studentsReady])
   } catch (e) {
     ElMessage.error(error(e))
     if (props.advisorMode && e.response?.status === 403) await returnToWorkspace()

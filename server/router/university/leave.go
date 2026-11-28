@@ -74,13 +74,13 @@ func leaveList(c *gin.Context) {
 	if size > 100 {
 		size = 100
 	}
-	q := global.GVA_DB.Model(&uniLeave{}).Where("uni_leave_requests.tenant_id=?", tid)
+	q := global.GVA_DB.WithContext(c.Request.Context()).Table("uni_leave_requests l").Where("l.tenant_id=?", tid)
 	if s := c.Query("status"); s != "" {
 		if !leaveStatusValid(s) {
 			leaveFail(c, 400, "状态不合法")
 			return
 		}
-		q = q.Where("uni_leave_requests.status=?", s)
+		q = q.Where("l.status=?", s)
 	}
 	if s := c.Query("studentId"); s != "" {
 		id, e := strconv.ParseUint(s, 10, 64)
@@ -88,19 +88,30 @@ func leaveList(c *gin.Context) {
 			leaveFail(c, 400, "学生ID不合法")
 			return
 		}
-		q = q.Where("uni_leave_requests.student_id=?", id)
+		q = q.Where("l.student_id=?", id)
 	}
-	if s := strings.TrimSpace(c.Query("keyword")); s != "" {
-		like := "%" + s + "%"
-		q = q.Joins("JOIN uni_students st ON st.tenant_id=uni_leave_requests.tenant_id AND st.id=uni_leave_requests.student_id").Where("st.name LIKE ? OR st.student_no LIKE ?", like, like)
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	const joinStudent = "JOIN uni_students st ON st.tenant_id=l.tenant_id AND st.id=l.student_id"
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		q = q.Joins(joinStudent).Where("(st.name LIKE ? OR st.student_no LIKE ?)", like, like)
 	}
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		leaveFail(c, 500, "统计请假记录失败")
 		return
 	}
-	var rows []uniLeave
-	if err := q.Select("uni_leave_requests.*").Order("uni_leave_requests.id DESC").Limit(size).Offset((page - 1) * size).Find(&rows).Error; err != nil {
+	if keyword == "" {
+		q = q.Joins(joinStudent)
+	}
+	type Leave = uniLeave
+	var rows []struct {
+		Leave
+		StudentName string `json:"studentName"`
+		StudentNo   string `json:"studentNo"`
+	}
+	if err := q.Select("l.*, st.name AS student_name, st.student_no").Order("l.id DESC").
+		Limit(size).Offset((page - 1) * size).Scan(&rows).Error; err != nil {
 		leaveFail(c, 500, "查询请假记录失败")
 		return
 	}

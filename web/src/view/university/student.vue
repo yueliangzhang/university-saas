@@ -27,7 +27,7 @@
             <el-option v-for="x in classes" :key="x.id" :label="x.name" :value="x.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="辅导员"><el-select v-model="filterAdvisor" clearable filterable placeholder="全部辅导员" style="width:190px" @change="search"><el-option label="未分配" :value="0"/><el-option v-for="t in teachers" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id"/></el-select></el-form-item>
+        <el-form-item label="辅导员"><el-select v-model="filterAdvisor" clearable filterable placeholder="全部辅导员" style="width:190px" @visible-change="visible => { if (visible) loadTeachers() }" @change="search"><el-option label="未分配" :value="0"/><el-option v-for="t in teachers" :key="t.id" :label="`${t.name}（${t.teacherNo}）`" :value="t.id"/></el-select></el-form-item>
         <el-form-item label="学籍状态">
           <el-select v-model="filterStatus" clearable placeholder="全部状态" style="width:130px" @change="search">
             <el-option label="在读" value="1" /><el-option label="停用" value="2" />
@@ -122,7 +122,29 @@ import request from '@/utils/request'
 import { useRecordTable } from './useRecordTable'
 const activeTab=ref('profile')
 const teachers=ref([]),filterAdvisor=useSessionStorage('university-student-advisor', null, { serializer: StorageSerializers.object }),advisorChoice=ref('auto')
-const loadTeachers=async()=>{try{const all=[];for(let p=1;;p++){const r=await request({url:'/uni/teachers',method:'get',params:{page:p,pageSize:100}});if(r?.code!==0)throw Error(r?.msg||'教师加载失败');const chunk=r.data?.list||[];all.push(...chunk);if(!chunk.length||all.length>=r.data.total)break}teachers.value=all}catch(e){ElMessage.error(e.message)}}
+let teachersRequest
+const loadTeachers = () => {
+  if (teachersRequest) return teachersRequest
+  teachersRequest = (async () => {
+    try {
+      const all = []
+      for (let page = 1; ; page++) {
+        const result = await request({
+          url: '/uni/teachers', method: 'get', params: { page, pageSize: 100 }, donNotShowLoading: true
+        })
+        if (result?.code !== 0) throw new Error(result?.msg || '教师加载失败')
+        const chunk = result.data?.list || []
+        all.push(...chunk)
+        if (!chunk.length || all.length >= result.data.total) break
+      }
+      teachers.value = all
+    } catch (error) {
+      teachersRequest = null
+      ElMessage.error(error.message || '教师加载失败')
+    }
+  })()
+  return teachersRequest
+}
 const rows=ref([]),classes=ref([]),majors=ref([]),colleges=ref([])
 const detail = ref(null)
 const { height: viewportHeight } = useWindowSize()
@@ -166,14 +188,28 @@ const changeSort = event => {
   setSort(event)
   search()
 }
-const loadOptions=async()=>{try{for(const [kind,target] of [['colleges',colleges],['majors',majors],['classes',classes]]){const r=await request({url:`/uni/org/${kind}`,method:'get'});if(r?.code!==0)throw Error(r?.msg||'组织架构加载失败');target.value=r.data?.list||[]}}catch(e){ElMessage.error(e.message)}}
+const loadOptions = () => Promise.all(
+  [['colleges', colleges], ['majors', majors], ['classes', classes]].map(async ([kind, target]) => {
+    try {
+      const result = await request({ url: `/uni/org/${kind}`, method: 'get', donNotShowLoading: true })
+      if (result?.code !== 0) throw new Error(result?.msg || '组织架构加载失败')
+      target.value = result.data?.list || []
+    } catch (error) {
+      ElMessage.error(error.message || '组织架构加载失败')
+    }
+  })
+)
 const search=()=>{page.value=1;load()}
 const reset=()=>{keyword.value='';filterClass.value=null;filterAdvisor.value=null;filterStatus.value='';filterYear.value=null;search()}
 const openCreate=()=>{editing.value=false;advisorChoice.value='auto';loadTeachers();form.value={studentNo:'',name:'',gender:0,classId:null,enrollmentYear:new Date().getFullYear(),phone:'',email:'',status:1};dialog.value=true}
 const openEdit=row=>{editing.value=true;advisorChoice.value=row.advisorId ?? 'none';loadTeachers();form.value={...row};dialog.value=true}
 const save=async()=>{if(!form.value.studentNo?.trim()||!form.value.name?.trim()||!form.value.classId){ElMessage.warning('请填写学号、姓名并选择班级');return}saving.value=true;try{const payload={...form.value};delete payload.advisorId;if(advisorChoice.value!=='auto'&&(!editing.value||advisorChoice.value!==(form.value.advisorId??'none')))payload.advisorId=advisorChoice.value==='none'?null:advisorChoice.value;const r=await api(editing.value?'put':'post',payload);if(r?.code!==0)throw Error(r?.msg||'保存失败');ElMessage.success('保存成功');dialog.value=false;await load()}catch(e){ElMessage.error(e.message)}finally{saving.value=false}}
 const remove=async row=>{try{await ElMessageBox.confirm(`确定删除学生「${row.name}」？`,'删除确认',{type:'warning'});const r=await api('delete',undefined,{id:row.id});if(r?.code!==0)throw Error(r?.msg||'删除失败');ElMessage.success('删除成功');await load()}catch(e){if(e!=='cancel')ElMessage.error(e.message||'删除失败')}}
-onMounted(async()=>{await Promise.all([loadOptions(),loadTeachers()]);await load()})
+onMounted(() => {
+  load()
+  loadOptions()
+  if (filterAdvisor.value) loadTeachers()
+})
 </script>
 <style scoped>
 .uni-student-tabs { display:flex; align-items:center; gap:5px; border-bottom:1px solid #e7edf5; margin:0 0 16px; padding:0 2px; overflow-x:auto; }

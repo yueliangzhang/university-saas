@@ -95,7 +95,7 @@ func studentList(c *gin.Context) {
 	if size > 100 {
 		size = 100
 	}
-	q := global.GVA_DB.Table("uni_students s").Joins("LEFT JOIN uni_teachers t ON t.tenant_id=s.tenant_id AND t.id=s.advisor_id").Where("s.tenant_id=?", tid)
+	q := global.GVA_DB.Table("uni_students s").Where("s.tenant_id=?", tid)
 	if keyword := strings.TrimSpace(c.Query("keyword")); keyword != "" {
 		like := "%" + keyword + "%"
 		q = q.Where("s.student_no LIKE ? OR s.name LIKE ?", like, like)
@@ -141,6 +141,7 @@ func studentList(c *gin.Context) {
 		return
 	}
 	var rows []uniStudent
+	q = q.Joins("LEFT JOIN uni_teachers t ON t.tenant_id=s.tenant_id AND t.id=s.advisor_id")
 	if err := recordOrder(c, q, "s.id", map[string]string{
 		"studentNo": "s.student_no", "name": "s.name", "gender": "s.gender",
 		"className":   "(SELECT cl.name FROM uni_classes cl WHERE cl.tenant_id=s.tenant_id AND cl.id=s.class_id)",

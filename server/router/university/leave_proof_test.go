@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flipped-aurora/gin-vue-admin/server/global"
+	"github.com/flipped-aurora/gin-vue-admin/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -36,8 +37,8 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
-		"CREATE TABLE uni_students (id INTEGER, tenant_id INTEGER, status INTEGER, advisor_id INTEGER)",
-		"INSERT INTO uni_students VALUES (2, 1, 1, 3)",
+		"CREATE TABLE uni_students (id INTEGER, tenant_id INTEGER, status INTEGER, advisor_id INTEGER, name TEXT, student_no TEXT)",
+		"INSERT INTO uni_students VALUES (2, 1, 1, 3, 'Student One', 'S001'), (2, 2, 1, 3, 'Other tenant', 'S001')",
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatal(err)
@@ -46,6 +47,7 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
+		c.Set(middleware.TenantIDContextKey, uint64(1))
 		c.Set(studentPortalTenantID, uint64(1))
 		c.Set(studentPortalStudentID, uint64(2))
 		c.Set(teacherTenantKey, uint64(1))
@@ -55,6 +57,7 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 		}
 		c.Set(teacherIDKey, advisor)
 	})
+	router.GET("/admin/leaves", leaveList)
 	router.POST("/student/leaves", studentLeaveCreate)
 	router.GET("/student/leaves", studentLeaveList)
 	router.GET("/student/leaves/:id/proof", studentLeaveProof)
@@ -184,6 +187,17 @@ func TestStudentLeaveOptionalProof(t *testing.T) {
 		(2,2,'approved','2020-05-01 12:00:00','2020-05-02 12:00:00')`).Error; err != nil {
 		t.Fatal(err)
 	}
+	for _, query := range []string{"?status=approved", "?status=approved&keyword=S001"} {
+		adminList := send(http.MethodGet, "/admin/leaves"+query, "", nil, "")
+		body := adminList.Body.String()
+		if adminList.Code != http.StatusOK || !strings.Contains(body, `"total":2`) ||
+			!strings.Contains(body, `"studentName":"Student One"`) ||
+			!strings.Contains(body, `"studentNo":"S001"`) || !strings.Contains(body, `"studentId":2`) ||
+			strings.Contains(body, "Other tenant") {
+			t.Fatalf("unexpected admin leave listing: %s", body)
+		}
+	}
+
 	filtered := send(http.MethodGet, "/student/leaves?status=approved&from=2020-05-01&to=2020-05-01&includeSummary=true", "", nil, "")
 	if filtered.Code != http.StatusOK || !strings.Contains(filtered.Body.String(), `"total":1`) ||
 		!strings.Contains(filtered.Body.String(), `"approved":2`) {
