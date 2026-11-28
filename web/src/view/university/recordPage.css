@@ -1,0 +1,43 @@
+.uni-record-tabs { display:flex; align-items:center; gap:5px; border-bottom:1px solid #e7edf5; margin:0 0 16px; padding:0 2px; overflow-x:auto; }
+.uni-record-tabs button { appearance:none; cursor:pointer; white-space:nowrap; background:transparent; border:0; border-bottom:2px solid transparent; padding:12px 20px; font-size:14px; color:#65748b; font-weight:550; }
+.uni-record-tabs button:hover { color:#2563eb; }
+.uni-record-tabs button.active { color:#2563eb; border-bottom-color:#2563eb; font-weight:650; }
+@media(max-width:768px) { .uni-record-tabs button { padding:11px 14px; } }
+
+.uni-record-page { padding: 18px 22px 28px; min-width: 0; color: #25344d; }
+.uni-record-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.uni-record-heading h1 { margin:0; font-size:22px; line-height:1.4; font-weight:650; color:#1d2b43; }
+.uni-record-heading p { margin:5px 0 0; color:#7a879a; font-size:13px; }
+.uni-record-panel { border:1px solid #e6ebf3; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 3px 14px rgba(27,47,84,.025); }
+.uni-record-panel-title { padding:17px 20px; border-bottom:1px solid #edf0f5; }
+.uni-record-panel-name { font-size:15px; font-weight:650; }
+.uni-record-count { margin-left:10px; font-size:12px; font-weight:400; color:#8190a4; }
+.uni-record-filter { display:flex; align-items:center; flex-wrap:wrap; gap:0 14px; padding:18px 20px 2px; }
+.uni-record-filter :deep(.el-form-item) { margin-right:0; margin-bottom:16px; }
+.uni-record-filter :deep(.el-form-item__label) { color:#56657b; font-weight:500; }
+.uni-record-filter :deep(.el-input__wrapper), .uni-record-filter :deep(.el-select__wrapper) { border-radius:7px; }
+.uni-record-filter-actions { margin-left:auto; }
+.uni-record-page :deep(.el-button) { border-radius:7px; }
+.uni-record-page :deep(.el-button--primary) { --el-button-bg-color:#2563eb; --el-button-border-color:#2563eb; --el-button-hover-bg-color:#1d4ed8; --el-button-hover-border-color:#1d4ed8; }
+.uni-record-table-scroll { padding:0 20px; min-width:0; }
+.uni-record-page :deep(.el-table) { --el-table-header-bg-color:#f7f9fc; --el-table-border-color:#edf1f6; --el-table-row-hover-bg-color:#f7faff; font-size:13px; }
+.uni-record-page :deep(.el-table th.el-table__cell) { color:#617087; font-weight:600; height:46px; }
+.uni-record-page :deep(.el-table td.el-table__cell) { height:48px; color:#334155; }
+.uni-record-name { font-weight:600; color:#25344d; }
+.uni-record-number { font-variant-numeric:tabular-nums; color:#475569; }
+.uni-record-page :deep(.el-tag) { border-radius:5px; }
+.uni-record-pagination { display:flex; justify-content:flex-end; padding:17px 20px 20px; }
+@media (max-width: 768px) {
+  .uni-record-page { padding:12px; }
+  .uni-record-heading { align-items:flex-start; flex-wrap:wrap; }
+  .uni-record-heading h1 { font-size:19px; }
+  .uni-record-panel-title { padding:14px; }
+  .uni-record-filter { padding:14px 14px 0; display:block; }
+  .uni-record-filter :deep(.el-form-item) { display:flex; margin-bottom:12px; }
+  .uni-record-filter :deep(.el-form-item__content) { flex:1; min-width:0; }
+  .uni-record-filter :deep(.el-input), .uni-record-filter :deep(.el-select) { width:100% !important; }
+  .uni-record-filter-actions { margin-left:0; }
+  .uni-record-table-scroll { padding:0 10px; }
+  .uni-record-pagination { padding:14px 10px; overflow-x:auto; justify-content:flex-start; }
+  .uni-record-pagination :deep(.el-pagination) { flex-wrap:nowrap; }
+}

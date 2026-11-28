@@ -1,7 +1,7 @@
 <template>
   <!-- UNI_STUDENT_V17_6_9 -->
-  <main class="uni-student-page">
-    <div class="uni-student-heading">
+  <main class="uni-record-page">
+    <div class="uni-record-heading">
       <div>
         <h1>学生管理</h1>
         <p>统一管理学生档案、请假审批与登录账号</p>
@@ -9,16 +9,16 @@
       <div v-if="activeTab === 'profile'" style="display:flex;gap:8px;flex-wrap:wrap"><el-button v-if="activeTab === 'profile'" type="primary" @click="openCreate">+ 新增学生</el-button><RecordColumns v-model="visibleColumns" :columns="optionalColumns" /><ExcelImport kind="students" :filters="{keyword, classId:filterClass||undefined, advisorId:filterAdvisor??undefined, status:filterStatus||undefined, enrollmentYear:filterYear||undefined}" @imported="search" /><el-button type="danger" plain :loading="deleting" :disabled="loading || !selectedRows.length" @click="removeSelected">批量删除</el-button></div>
     </div>
 
-    <nav class="uni-student-tabs" aria-label="学生管理功能">
+    <nav class="uni-record-tabs" aria-label="学生管理功能">
       <button type="button" :class="{ active: activeTab === 'profile' }" @click="activeTab = 'profile'">学生档案</button>
       <button type="button" :class="{ active: activeTab === 'leave' }" @click="activeTab = 'leave'">请假审批</button>
       <button type="button" :class="{ active: activeTab === 'account' }" @click="activeTab = 'account'">登录账号</button>
     </nav>
-    <section v-show="activeTab === 'profile'" class="uni-student-panel">
-      <div class="uni-student-panel-title">
-        <div class="uni-student-panel-name">学生档案 <span class="uni-student-count">共 {{ total }} 人</span></div>
+    <section v-show="activeTab === 'profile'" class="uni-record-panel">
+      <div class="uni-record-panel-title">
+        <div class="uni-record-panel-name">学生档案 <span class="uni-record-count">共 {{ total }} 人</span></div>
       </div>
-      <el-form class="uni-student-filter" inline @submit.prevent="search">
+      <el-form class="uni-record-filter" inline @submit.prevent="search">
         <el-form-item label="姓名 / 学号">
           <el-input v-model="keyword" clearable placeholder="搜索姓名或学号" style="width:220px" @keyup.enter="search" />
         </el-form-item>
@@ -36,20 +36,20 @@
         <el-form-item label="入学年份">
           <el-input-number v-model="filterYear" :min="1900" :max="2100" :controls="false" placeholder="全部年份" @change="search" />
         </el-form-item>
-        <el-form-item class="uni-student-filter-actions">
+        <el-form-item class="uni-record-filter-actions">
           <el-button type="primary" @click="search">查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
 
-      <div class="uni-student-table-scroll">
+      <div class="uni-record-table-scroll">
         <el-table :max-height="tableHeight" v-loading="loading" :data="rows" stripe style="width:100%" empty-text="暂无符合条件的学生" @selection-change="selectedRows = $event" @sort-change="changeSort">
           <el-table-column type="selection" width="48" />
           <el-table-column prop="studentNo" label="学号" min-width="130" sortable="custom">
-            <template #default="{row}"><span class="uni-student-number">{{ row.studentNo }}</span></template>
+            <template #default="{row}"><span class="uni-record-number">{{ row.studentNo }}</span></template>
           </el-table-column>
           <el-table-column prop="name" label="姓名" min-width="150" sortable="custom">
-            <template #default="{row}"><span class="uni-student-name">{{ row.name }}</span></template>
+            <template #default="{row}"><span class="uni-record-name">{{ row.name }}</span></template>
           </el-table-column>
           <el-table-column v-if="visibleColumns.includes('gender')" label="性别" width="85" sortable="custom" prop="gender">
             <template #default="{row}">{{ ['未填写','男','女'][row.gender] || '未知' }}</template>
@@ -74,13 +74,13 @@
           </el-table-column>
         </el-table>
       </div>
-      <div class="uni-student-pagination">
+      <div class="uni-record-pagination">
         <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10,20,50,100]" layout="total, sizes, prev, pager, next" @current-change="load" @size-change="search" />
       </div>
     </section>
 
-    <section v-if="activeTab === 'leave'" class="uni-student-panel uni-student-subpanel"><StudentLeavePanel /></section>
-    <section v-if="activeTab === 'account'" class="uni-student-panel uni-student-subpanel"><StudentAccountPanel /></section>
+    <section v-if="activeTab === 'leave'" class="uni-record-panel uni-student-subpanel"><StudentLeavePanel /></section>
+    <section v-if="activeTab === 'account'" class="uni-record-panel uni-student-subpanel"><StudentAccountPanel /></section>
 
     <el-drawer :model-value="!!detail" title="学生详情" size="min(480px, 100vw)" append-to-body @update:model-value="value => { if (!value) detail = null }">
       <el-descriptions v-if="detail" :column="1" border>
@@ -211,49 +211,7 @@ onMounted(() => {
   if (filterAdvisor.value) loadTeachers()
 })
 </script>
+<style scoped src="./recordPage.css"></style>
 <style scoped>
-.uni-student-tabs { display:flex; align-items:center; gap:5px; border-bottom:1px solid #e7edf5; margin:0 0 16px; padding:0 2px; overflow-x:auto; }
-.uni-student-tabs button { appearance:none; cursor:pointer; white-space:nowrap; background:transparent; border:0; border-bottom:2px solid transparent; padding:12px 20px; font-size:14px; color:#65748b; font-weight:550; }
-.uni-student-tabs button:hover { color:#2563eb; }
-.uni-student-tabs button.active { color:#2563eb; border-bottom-color:#2563eb; font-weight:650; }
 .uni-student-subpanel { overflow:visible; }
-@media(max-width:768px) { .uni-student-tabs button { padding:11px 14px; } }
-
-.uni-student-page { padding: 18px 22px 28px; min-width: 0; color: #25344d; }
-.uni-student-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
-.uni-student-heading h1 { margin:0; font-size:22px; line-height:1.4; font-weight:650; color:#1d2b43; }
-.uni-student-heading p { margin:5px 0 0; color:#7a879a; font-size:13px; }
-.uni-student-panel { border:1px solid #e6ebf3; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 3px 14px rgba(27,47,84,.025); }
-.uni-student-panel-title { padding:17px 20px; border-bottom:1px solid #edf0f5; }
-.uni-student-panel-name { font-size:15px; font-weight:650; }
-.uni-student-count { margin-left:10px; font-size:12px; font-weight:400; color:#8190a4; }
-.uni-student-filter { display:flex; align-items:center; flex-wrap:wrap; gap:0 14px; padding:18px 20px 2px; }
-.uni-student-filter :deep(.el-form-item) { margin-right:0; margin-bottom:16px; }
-.uni-student-filter :deep(.el-form-item__label) { color:#56657b; font-weight:500; }
-.uni-student-filter :deep(.el-input__wrapper), .uni-student-filter :deep(.el-select__wrapper) { border-radius:7px; }
-.uni-student-filter-actions { margin-left:auto; }
-.uni-student-page :deep(.el-button) { border-radius:7px; }
-.uni-student-page :deep(.el-button--primary) { --el-button-bg-color:#2563eb; --el-button-border-color:#2563eb; --el-button-hover-bg-color:#1d4ed8; --el-button-hover-border-color:#1d4ed8; }
-.uni-student-table-scroll { padding:0 20px; min-width:0; }
-.uni-student-page :deep(.el-table) { --el-table-header-bg-color:#f7f9fc; --el-table-border-color:#edf1f6; --el-table-row-hover-bg-color:#f7faff; font-size:13px; }
-.uni-student-page :deep(.el-table th.el-table__cell) { color:#617087; font-weight:600; height:46px; }
-.uni-student-page :deep(.el-table td.el-table__cell) { height:48px; color:#334155; }
-.uni-student-name { font-weight:600; color:#25344d; }
-.uni-student-number { font-variant-numeric:tabular-nums; color:#475569; }
-.uni-student-page :deep(.el-tag) { border-radius:5px; }
-.uni-student-pagination { display:flex; justify-content:flex-end; padding:17px 20px 20px; }
-@media (max-width: 768px) {
-  .uni-student-page { padding:12px; }
-  .uni-student-heading { align-items:flex-start; }
-  .uni-student-heading h1 { font-size:19px; }
-  .uni-student-panel-title { padding:14px; }
-  .uni-student-filter { padding:14px 14px 0; display:block; }
-  .uni-student-filter :deep(.el-form-item) { display:flex; margin-bottom:12px; }
-  .uni-student-filter :deep(.el-form-item__content) { flex:1; min-width:0; }
-  .uni-student-filter :deep(.el-input), .uni-student-filter :deep(.el-select) { width:100% !important; }
-  .uni-student-filter-actions { margin-left:0; }
-  .uni-student-table-scroll { padding:0 10px; }
-  .uni-student-pagination { padding:14px 10px; overflow-x:auto; justify-content:flex-start; }
-  .uni-student-pagination :deep(.el-pagination) { flex-wrap:nowrap; }
-}
 </style>

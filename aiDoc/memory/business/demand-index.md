@@ -7,6 +7,8 @@
 
 ## Done
 
+- [教师档案与学生档案排版统一](done/university-teacher-profile-layout.md)
+
 - [学生管理与请假审批加载优化](done/university-student-leave-load-performance.md)
 
 - [教师账号与辅导员分配搜索](done/university-teacher-tabs-search.md)
